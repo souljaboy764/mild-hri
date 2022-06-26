@@ -8,7 +8,7 @@ import os, datetime, argparse
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
-from config import global_config, human_vae_config
+import config
 from utils import *
 import dataloaders
 
@@ -71,25 +71,25 @@ def run_iteration(iterator, hsmm, model, optimizer):
 	return total_recon, total_reg, total_loss, x_gen, zpost_samples, x, iters
 
 if __name__=='__main__':
-	parser = argparse.ArgumentParser(description='SKID Training')
+	parser = argparse.ArgumentParser(description='HSMM VAE Training')
 	parser.add_argument('--results', type=str, default='./logs/results/'+datetime.datetime.now().strftime("%m%d%H%M"), metavar='RES',
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).')
-	parser.add_argument('--src', type=str, default='/home/vignesh/playground/buetepage-phri/data/hsmmvae_downsampled/hsmmvae_data.npz', metavar='RES',
-						help='Path to read training and testin data (default: ./data/orig/vae/data.npz).')
+	parser.add_argument('--src', type=str, default='/home/vignesh/playground/hsmmvae/data/buetepage/traj_data.npz', metavar='RES',
+						help='Path to read training and testing data (default: /home/vignesh/playground/hsmmvae/data/buetepage/traj_data.npz).')
 	parser.add_argument('--prior', type=str, default='HSMM', metavar='P(Z)', choices=['None', 'RNN', 'BIP', 'HSMM'],
-						help='Which prior to use for the VAE (default: None')
+						help='Prior to use for the VAE (default: None')
 	parser.add_argument('--hsmm-components', type=int, default=10, metavar='N_COMPONENTS', 
 						help='Number of components to use in HSMM Prior (default: 10).')
 	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'WAE'],
-						help='Path to read training and testin data (default: ./data/data/single_sample_per_action/data.npz).')
+						help='Model to use: AE, VAE or WAE (default: VAE).')
 	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'hhoi', 'shakefive'],
-						help='Path to read training and testin data (default: ./data/data/single_sample_per_action/data.npz).')
+						help='Dataset to use: buetepage, hhoi or shakefive (default: buetepage).')
 	args = parser.parse_args()
 	torch.manual_seed(128542)
 	torch.autograd.set_detect_anomaly(True)
 
-	config = global_config()
-	vae_config = human_vae_config()
+	global_config = getattr(config, args.dataset).global_config()
+	ae_config = getattr(config, args.dataset).ae_config()
 
 	DEFAULT_RESULTS_FOLDER = args.results
 	MODELS_FOLDER = os.path.join(DEFAULT_RESULTS_FOLDER, "models")
@@ -100,17 +100,17 @@ if __name__=='__main__':
 		os.makedirs(DEFAULT_RESULTS_FOLDER)
 		os.makedirs(MODELS_FOLDER)
 		os.makedirs(SUMMARIES_FOLDER)
-		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=config, vae_config=vae_config)
+		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config)
 
 	# elif os.path.exists(os.path.join(MODELS_FOLDER,'hyperparams.npz')):
 	# 	hyperparams = np.load(os.path.join(MODELS_FOLDER,'hyperparams.npz'), allow_pickle=True)
 	# 	args = hyperparams['args'].item() # overwrite args if loading from checkpoint
 	# 	config = hyperparams['global_config'].item()
-	# 	vae_config = hyperparams['vae_config'].item()
+	# 	ae_config = hyperparams['ae_config'].item()
 
 	print("Creating Model and Optimizer")
-	model = getattr(networks, args.model)(**(vae_config.__dict__)).to(device)
-	optimizer = getattr(torch.optim, config.optimizer)(model.parameters(), lr=config.lr)
+	model = getattr(networks, args.model)(**(ae_config.__dict__)).to(device)
+	optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
 
 	if os.path.exists(os.path.join(MODELS_FOLDER, 'final.pth')):
 		print("Loading Checkpoints")
@@ -130,14 +130,14 @@ if __name__=='__main__':
 	# writer.add_graph(model, torch.Tensor(test_data[:10]).to(device))
 	# model.train()
 	s = ''
-	for k in config.__dict__:
-		s += str(k) + ' : ' + str(config.__dict__[k]) + '\n'
+	for k in global_config.__dict__:
+		s += str(k) + ' : ' + str(global_config.__dict__[k]) + '\n'
 	writer.add_text('global_config', s)
 
 	s = ''
-	for k in vae_config.__dict__:
-		s += str(k) + ' : ' + str(vae_config.__dict__[k]) + '\n'
-	writer.add_text('human_vae_config', s)
+	for k in ae_config.__dict__:
+		s += str(k) + ' : ' + str(ae_config.__dict__[k]) + '\n'
+	writer.add_text('human_ae_config', s)
 
 	writer.flush()
 
@@ -153,7 +153,7 @@ if __name__=='__main__':
 		hsmm[-1].Sigma_Pd = np.ones(nb_states)
 		hsmm[-1].Trans_Pd = np.ones((nb_states, nb_states))/nb_states
 
-	for epoch in range(config.EPOCHS):
+	for epoch in range(global_config.EPOCHS):
 		model.train()
 		train_recon, train_kl, train_loss, x_gen, zx_samples, x, iters = run_iteration(train_iterator, hsmm, model, optimizer)
 		steps_done = (epoch+1)*iters
@@ -190,7 +190,7 @@ if __name__=='__main__':
 				hsmm[i].init_hmm_kbins(z_encoded)
 				hsmm[i].em(z_encoded)
 
-		if epoch % config.EPOCHS_TO_SAVE == 0:
+		if epoch % global_config.EPOCHS_TO_SAVE == 0:
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.4d.pth'%(epoch))
 			torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
 
