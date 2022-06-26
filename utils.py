@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
+
+import networks
 colors_10 = get_cmap('tab10')
 
 def MMD(x, y, reduction='mean'):
@@ -115,7 +117,11 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
 	
 	# writer.add_embedding(zx_samples[:100],global_step=steps_done, tag=prefix+'/q(z|x)')
-	_, seq_len, dims = x_gen.shape
+	if model.training and isinstance(model, networks.VAE):
+		_, _, seq_len, dims = x_gen.shape
+		x_gen = x_gen[-1]
+	else:
+		_, seq_len, dims = x_gen.shape
 	x_gen = x_gen.detach().cpu().numpy()
 	x = x.detach().cpu().numpy()
 	

@@ -44,7 +44,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 
 		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 		x_gen, zpost_samples, zpost_dist = model(x)
-		if model.training and not isinstance(model, networks.AE):
+		if model.training and isinstance(model, networks.VAE):
 			recon_loss = F.mse_loss(x[None].repeat(11,1,1,1), x_gen, reduction='sum')
 		else:
 			recon_loss = F.mse_loss(x, x_gen, reduction='sum')

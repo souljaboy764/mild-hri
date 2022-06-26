@@ -57,18 +57,22 @@ if __name__=='__main__':
 			gen_data.append(x2_gen.detach().cpu().numpy())
 
 		x_gen = gen_data[-1].reshape(-1, model.num_joints, 3)
-		x1_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints, 3)
-		x2_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints, 3)
+		x1_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints, 3)
+		x2_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints, 3)
 		fig = plt.figure()
 		ax = fig.add_subplot(1, 1, 1, projection='3d')
 		ax.view_init(20, -45)
 		plt.ion()
 		for t in range(seq_len):
-			ax.scatter(x_gen[i, :, 0], x_gen[i, :, 1], x_gen[i, :, 2], color='b', marker='o')
-			ax.scatter(x1_gt[i, :, 0], x1_gt[i, :, 1], x1_gt[i, :, 2], color='g', marker='o')
-			ax.scatter(x2_gt[i, :, 0], x2_gt[i, :, 1], x2_gt[i, :, 2], color='r', marker='o')
+			plt.cla()
+			ax.set_xlim3d([-0.5, 0.5])
+			ax.set_ylim3d([-0.5, 0.5])
+			ax.set_zlim3d([-0.5, 0.5])
+			ax.scatter(x_gen[t, :, 0], x_gen[t, :, 1], x_gen[t, :, 2], color='b', marker='o')
+			ax.scatter(x1_gt[t, :, 0], x1_gt[t, :, 1], x1_gt[t, :, 2], color='g', marker='o')
+			ax.scatter(x2_gt[t, :, 0], x2_gt[t, :, 1], x2_gt[t, :, 2], color='r', marker='o')
 			plt.pause(0.03)	
-			if plt.fignum_exists(fig.number):
+			if not plt.fignum_exists(fig.number):
 				break
 		plt.ioff()
 		# plt.close("all")
