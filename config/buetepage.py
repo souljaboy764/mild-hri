@@ -20,6 +20,6 @@ class ae_config:
 		self.hidden_sizes = [250, 150]
 		self.latent_dim = 3
 		self.beta = 0.5
-		self.activation = 'ReLU'
+		self.activation = 'LeakyReLU'
 		self.z_prior_mean = 0
 		self.z_prior_std = 1

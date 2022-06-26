@@ -10,7 +10,6 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
 import dataloaders
-import config
 import pbdlib as pbd
 
 if __name__=='__main__':
@@ -50,10 +49,10 @@ if __name__=='__main__':
 	train_mse = np.zeros((len(nb_states), NUM_ACTIONS))
 	test_mse = np.zeros((len(nb_states), NUM_ACTIONS))
 	with torch.no_grad():
-		def hsmm_mse(hsmm, z1, x2_gt):
-			z2_pred, _ = hsmm.condition(z1, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+		def hsmm_mse(hsmm, z_in, x2_gt):
+			z2_pred, _ = hsmm.condition(z_in, dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim))
 			x2_gen = model._output(model._decoder(torch.Tensor(z2_pred).to(device)))
-			return F.mse_loss(x2_gt, x2_gen).detach().cpu().numpy()
+			return F.mse_loss(x2_gt, x2_gen, reduction='mean').detach().cpu().numpy()
 		for i in range(NUM_ACTIONS):
 			print('Action',i)
 			s = train_dataset.actidx[i]
@@ -73,7 +72,9 @@ if __name__=='__main__':
 				x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 				zpost_samples = model(x, encode_only=True)
 
-				z_encoded_train.append(torch.concat([zpost_samples[0], zpost_samples[1]], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+				z1_vel = torch.diff(zpost_samples[0], prepend=zpost_samples[0][0:1], dim=0)
+				z2_vel = torch.diff(zpost_samples[1], prepend=zpost_samples[1][0:1], dim=0)
+				z_encoded_train.append(torch.concat([zpost_samples[0], z1_vel, zpost_samples[1], z2_vel], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 			
 			s = test_dataset.actidx[i]
 			for j in range(s[0], s[1]):
@@ -82,11 +83,13 @@ if __name__=='__main__':
 				x = torch.Tensor(x).to(device)
 				seq_len, dims = x.shape
 				x2_gt_test.append(x[:, dims//2:])
-				x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 				zpost_samples = model(x[:, :dims//2], encode_only=True)
-				z_encoded_test.append(zpost_samples.cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+				z_vel = torch.diff(zpost_samples, prepend=zpost_samples[0:1], dim=0)
+				z = torch.concat([zpost_samples,z_vel], dim=-1)
+				z_encoded_test.append(z.cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 			
-			for nb_state in nb_states:
+			for n in range(len(nb_states)):
+				nb_state = nb_states[n]
 				print('Running',nb_state,'states')
 				hsmm = pbd.HSMM(nb_dim=nb_dim, nb_states=nb_state)
 				hsmm.init_hmm_kbins(z_encoded_train)
@@ -94,14 +97,14 @@ if __name__=='__main__':
 
 				mse = []
 				for j in range(len(x2_gt_train)):
-					mse.append(hsmm_mse(hsmm, z_encoded_train[j][:, :z_dim], x2_gt_train[j]))
-				train_mse[nb_state, i] = np.mean(mse)
-			
+					mse.append(hsmm_mse(hsmm, z_encoded_train[j][:, :2*z_dim], x2_gt_train[j]))
+				train_mse[n, i] = np.sum(mse)
+
 				mse = []
 				for j in range(len(x2_gt_test)):
 					mse.append(hsmm_mse(hsmm, z_encoded_test[j], x2_gt_test[j]))
-				test_mse[nb_state, i] = np.mean(mse)
-				print('Finished',nb_state,'states')
+				test_mse[n, i] = np.sum(mse)
+				print('Finished',nb_state,'states',test_mse[n, i],train_mse[n, i])
 
 	fig = plt.figure()
 	ax = fig.add_subplot(1, 2, 1)
@@ -110,5 +113,7 @@ if __name__=='__main__':
 	ax = fig.add_subplot(1, 2, 2)
 	ax.imshow(test_mse)
 	ax.set_title('Testing MSE')
-	plt.show()
+	plt.savefig('hsmm_ablation.png')
+	print(train_mse)
+	print(test_mse)
 	
