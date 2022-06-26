@@ -2,7 +2,7 @@ class global_config:
 	def __init__(self):
 		self.NUM_JOINTS = 4
 		self.JOINTS_DIM = 3
-		self.WINDOW_LEN = 40
+		self.WINDOW_LEN = 1
 		self.ROBOT_JOINTS = 7
 		self.NUM_ACTIONS = 5
 		self.optimizer = 'Adam'
