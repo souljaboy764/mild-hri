@@ -1,3 +1,3 @@
-from networks.ae import AE
-from networks.vae import VAE
-from networks.wae import WAE
+from networks.ae import *
+from networks.vae import *
+from networks.wae import *
