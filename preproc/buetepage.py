@@ -39,10 +39,10 @@ def preproc(src_dir, downsample_len=250, augment=False):
 	test_data = []
 	test_labels = []
 	
-	# idx_list = np.array([joints_dic[joint] for joint in ['Hips', 'Spine1', 'Neck', 'Head', 
-	# 													'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
-	# 													'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand']])
-	idx_list = np.array([joints_dic[joint] for joint in ['RightShoulder', 'RightArm', 'RightForeArm', 'RightHand']])
+	idx_list = np.array([joints_dic[joint] for joint in ['Hips', 'Spine1', 'Neck', 'Head', 
+														'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+														'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand']])
+	# idx_list = np.array([joints_dic[joint] for joint in ['RightShoulder', 'RightArm', 'RightForeArm', 'RightHand']])
 	# idx_list = np.array([joints_dic[joint] for joint in ['RightHand']])
 	theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device)
 	theta = theta.repeat(idx_list.shape[0],1,1)

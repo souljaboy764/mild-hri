@@ -26,23 +26,30 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		x, idx, label = x
 		x = x[0]
 		idx = idx[0]
-		label = label[0]
+		label = label[0][0]
 		x = torch.Tensor(x).to(device)
 		seq_len, dims = x.shape
-		label = label[0]
-		if not isinstance(model, networks.AE):
+		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
+		if model.window_size>1:
+			bp_idx = np.zeros((seq_len-model.window_size, model.window_size))
+			for i in range(model.window_size):
+				bp_idx[:,i] = idx[i:seq_len-model.window_size+i]
+			x = x[:, bp_idx].flatten(2)
+
+		if isinstance(model, networks.VAE):
 			alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
 			if np.any(np.isnan(alpha_hsmm)):
 				alpha_hsmm = forward_variable(hsmm[label], seq_len)
-			mu_prior = torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,z_dim:]]).to(device)
-			Sigma_prior = torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, z_dim:, z_dim:]]).to(device)
+			# mu_prior = torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,z_dim:]]).to(device)
+			# Sigma_prior = torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, z_dim:, z_dim:]]).to(device)
+			mu_prior = torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,2*z_dim:3*z_dim]]).to(device)
+			Sigma_prior = torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, 2*z_dim:3*z_dim, 2*z_dim:3*z_dim]]).to(device)
 			alpha_hsmm = torch.Tensor(alpha_hsmm).to(device)
 			# seq_alpha = alpha_hsmm.argmax(-1, keepdim=True).cpu().numpy()
 
 		if model.training:
 			optimizer.zero_grad()
 
-		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 		x_gen, zpost_samples, zpost_dist = model(x)
 		if model.training and isinstance(model, networks.VAE):
 			recon_loss = F.mse_loss(x[None].repeat(11,1,1,1), x_gen, reduction='sum')
@@ -50,7 +57,8 @@ def run_iteration(iterator, hsmm, model, optimizer):
 			recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 
 		reg_loss = 0.
-		if not isinstance(model, networks.AE):
+		if isinstance(model, networks.VAE):
+			# reg_loss = model.latent_loss(zpost_dist, zpost_samples)
 			for c in range(hsmm[label].nb_states):
 				z_prior = torch.distributions.MultivariateNormal(mu_prior[:, c:c+1].repeat(1,seq_len,1), Sigma_prior[:, c:c+1].repeat(1,seq_len,1,1))
 				kld = torch.distributions.kl_divergence(zpost_dist, z_prior).mean(0)
@@ -80,7 +88,7 @@ if __name__=='__main__':
 						help='Prior to use for the VAE (default: None')
 	parser.add_argument('--hsmm-components', type=int, default=10, metavar='N_COMPONENTS', 
 						help='Number of components to use in HSMM Prior (default: 10).')
-	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'WAE'],
+	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'WAE', 'FullCovVAE'],
 						help='Model to use: AE, VAE or WAE (default: VAE).')
 	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'hhoi', 'shakefive'],
 						help='Dataset to use: buetepage, hhoi or shakefive (default: buetepage).')
@@ -143,7 +151,7 @@ if __name__=='__main__':
 
 	print("Starting Epochs")
 	hsmm = []
-	nb_dim = 2*model.latent_dim
+	nb_dim = 4*model.latent_dim
 	nb_states = args.hsmm_components
 	for i in range(NUM_ACTIONS):
 		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
@@ -173,22 +181,29 @@ if __name__=='__main__':
 			test_recon, test_kl, test_loss, x_gen, zx_samples, x, iters = run_iteration(test_iterator, hsmm, model, optimizer)
 			write_summaries_vae(writer, test_recon, test_kl, test_loss, x_gen, zx_samples, x, steps_done, 'test', model)
 
-			# Updating Prior
-			for i in range(len(train_iterator.dataset.actidx)):
-				s = train_iterator.dataset.actidx[i]
-				z_encoded = []
-				# for j in range(s[0], s[1]):
-				for j in np.random.randint(s[0], s[1], 20):
-					x, idx, label = train_iterator.dataset[j]
-					assert np.all(label == i)
-					x = torch.Tensor(x).to(device)
-					seq_len, dims = x.shape
-					x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
-					zpost_samples = model(x, encode_only=True)
-		
-					z_encoded.append(torch.concat([zpost_samples[0], zpost_samples[1]], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-				hsmm[i].init_hmm_kbins(z_encoded)
-				hsmm[i].em(z_encoded)
+			if isinstance(model, networks.VAE):
+				# Updating Prior
+				for a in range(len(train_iterator.dataset.actidx)):
+					s = train_iterator.dataset.actidx[a]
+					z_encoded = []
+					# for j in range(s[0], s[1]):
+					for j in np.random.randint(s[0], s[1], 20):
+						x, idx, label = train_iterator.dataset[j]
+						assert np.all(label == a)
+						x = torch.Tensor(x).to(device)
+						seq_len, dims = x.shape
+						x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
+						if model.window_size>1:
+							bp_idx = np.zeros((seq_len-model.window_size, model.window_size))
+							for i in range(model.window_size):
+								bp_idx[:,i] = idx[i:seq_len-model.window_size+i]
+							x = x[:, bp_idx].flatten(2)
+						zpost_samples = model(x, encode_only=True)
+						z1_vel = torch.diff(zpost_samples[0], prepend=zpost_samples[0][0:1], dim=0)
+						z2_vel = torch.diff(zpost_samples[1], prepend=zpost_samples[1][0:1], dim=0)
+						z_encoded.append(torch.concat([zpost_samples[0], z1_vel, zpost_samples[1], z2_vel], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+					hsmm[a].init_hmm_kbins(z_encoded)
+					hsmm[a].em(z_encoded)
 
 		if epoch % global_config.EPOCHS_TO_SAVE == 0:
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.4d.pth'%(epoch))

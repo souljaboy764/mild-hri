@@ -5,7 +5,6 @@ from torch.distributions import Normal, MultivariateNormal, kl_divergence
 
 from networks import AE
 
-
 def batchNearestPD(A):
 	"""Find the nearest positive-definite matrix to input
 	A Python/Numpy port [1] of John D'Errico's `nearestSPD` MATLAB code [2], which
@@ -62,8 +61,35 @@ class VAE(AE):
 		super(VAE, self).__init__(**kwargs)
 		
 		self.post_mean = nn.Linear(self.enc_sizes[-1], self.latent_dim)
-		# Not mentioned in the paper what is used to ensure stddev>0, using softplus for now
-		# self.post_std = nn.Sequential(nn.Linear(self.enc_sizes[-1], self.latent_dim), nn.Softplus())
+		self.post_logstd = nn.Linear(self.enc_sizes[-1], self.latent_dim)
+		
+	def forward(self, x, encode_only = False):
+		enc = self._encoder(x)
+		z_mean = self.post_mean(enc)
+		if encode_only:
+			return z_mean
+		# z_std = self.post_logstd(enc).exp()
+		# zpost_dist = Normal(z_mean, z_std)
+		z_std = torch.diag_embed(self.post_logstd(enc).exp())
+		zpost_dist = MultivariateNormal(z_mean, z_std)
+			
+		if self.training:
+			zpost_samples = torch.concat([zpost_dist.rsample((10,)), z_mean[None]], dim=0)
+		else:
+			zpost_samples = z_mean
+		
+		x_gen = self._output(self._decoder(zpost_samples))
+		return x_gen, zpost_samples, zpost_dist
+
+	def latent_loss(self, zpost_dist, zpost_samples):
+		return kl_divergence(zpost_dist, Normal(0, 1)).mean()
+
+class FullCovVAE(VAE):
+	def __init__(self, **kwargs):
+		super(FullCovVAE, self).__init__(**kwargs)
+		
+		# # Not mentioned in the paper what is used to ensure stddev>0, using softplus for now
+		# # self.post_std = nn.Sequential(nn.Linear(self.enc_sizes[-1], self.latent_dim), nn.Softplus())
 		self.post_cholesky = nn.Linear(self.enc_sizes[-1], (self.latent_dim*(self.latent_dim+1))//2)
 		self.z_prior = Normal(self.z_prior_mean, self.z_prior_std)
 		self.diag_idx = torch.arange(self.latent_dim)
@@ -71,14 +97,13 @@ class VAE(AE):
 
 	def forward(self, x, encode_only = False):
 		enc = self._encoder(x)
-		# zpost_dist = Normal(self.post_mean(enc), self.post_std(enc))
 		
-		# Colesky Matrix Prediction 
-		# Dorta et al. "Structured Uncertainty Prediction Networks" CVPR'18
-		# Dorta et al. "Training VAEs Under Structured Residuals" 2018
 		z_mean = self.post_mean(enc)
 		if encode_only:
 			return z_mean
+		# Colesky Matrix Prediction 
+		# Dorta et al. "Structured Uncertainty Prediction Networks" CVPR'18
+		# Dorta et al. "Training VAEs Under Structured Residuals" 2018
 		z_std = self.post_cholesky(enc)
 		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim)).to(z_std.device)
 		z_chol[..., self.tril_indices[0], self.tril_indices[1]] = z_std
@@ -93,11 +118,11 @@ class VAE(AE):
 		x_gen = self._output(self._decoder(zpost_samples))
 		return x_gen, zpost_samples, zpost_dist
 
-	def latent_loss(self, zpost_samples, zpost_dist):
+	def latent_loss(self, zpost_dist, zpost_samples):
 		if isinstance(self.z_prior, Normal):
 			return kl_divergence(zpost_dist, self.z_prior).mean()
 		if isinstance(self.z_prior, list):
-			kld = 0
+			kld = []
 			for p in self.z_prior:
-				kld += kl_divergence(zpost_dist, p).mean()
+				kld.append(kl_divergence(zpost_dist, p))
 			return kld

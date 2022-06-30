@@ -118,32 +118,54 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 	
 	# writer.add_embedding(zx_samples[:100],global_step=steps_done, tag=prefix+'/q(z|x)')
 	if model.training and isinstance(model, networks.VAE):
-		_, _, seq_len, dims = x_gen.shape
 		x_gen = x_gen[-1]
-	else:
-		_, seq_len, dims = x_gen.shape
+	_, seq_len, dims = x_gen.shape
 	x_gen = x_gen.detach().cpu().numpy()
 	x = x.detach().cpu().numpy()
 	
-	fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True, sharey=True)
-	fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+	if model.window_size>1:
+		x = x.reshape(2,-1,model.window_size,model.num_joints,3)
+		x_gen = x_gen.reshape(2,-1,model.window_size,model.num_joints,3)
+		fig, ax = plt.subplots(nrows=5, ncols=model.num_joints, figsize=(28, 16), sharex=True, sharey=True)
+		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
-	plt.subplots_adjust(
-		left=0.05,  # the left side of the subplots of the figure
-		right=0.95,  # the right side of the subplots of the figure
-		bottom=0.05,  # the bottom of the subplots of the figure
-		top=0.95,  # the top of the subplots of the figure
-		wspace=0.05,  # the amount of width reserved for blank space between subplots
-		hspace=0.05,  # the amount of height reserved for white space between subplots
-	)
-	for i in range(model.num_joints):
-		for j in range(2):
-			ax[i][j].set(xlim=(0, seq_len - 1))
-			color_counter = 0
-			for dim in range(3):
-				ax[i][j].plot(x[j, :, i*3+dim], color=colors_10(color_counter%10))
-				ax[i][j].plot(x_gen[j, :, i*3+dim], linestyle='--', color=colors_10(color_counter % 10))
-				color_counter += 1
+		plt.subplots_adjust(
+			left=0.05,  # the left side of the subplots of the figure
+			right=0.95,  # the right side of the subplots of the figure
+			bottom=0.05,  # the bottom of the subplots of the figure
+			top=0.95,  # the top of the subplots of the figure
+			wspace=0.05,  # the amount of width reserved for blank space between subplots
+			hspace=0.05,  # the amount of height reserved for white space between subplots
+		)
+		for i in range(5):
+			idx = np.random.randint(0, seq_len)
+			for j in range(model.num_joints):
+				ax[i][j].set(xlim=(0, model.window_size - 1))
+				color_counter = 0
+				for dim in range(model.joint_dims):
+					ax[i][j].plot(x[0, idx, :, j, dim], color=colors_10(color_counter%10))
+					ax[i][j].plot(x_gen[0, idx, :, j, dim], linestyle='--', color=colors_10(color_counter % 10))
+					color_counter += 1
+	else:
+		fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True, sharey=True)
+		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+
+		plt.subplots_adjust(
+			left=0.05,  # the left side of the subplots of the figure
+			right=0.95,  # the right side of the subplots of the figure
+			bottom=0.05,  # the bottom of the subplots of the figure
+			top=0.95,  # the top of the subplots of the figure
+			wspace=0.05,  # the amount of width reserved for blank space between subplots
+			hspace=0.05,  # the amount of height reserved for white space between subplots
+		)
+		for i in range(model.num_joints):
+			for j in range(2):
+				ax[i][j].set(xlim=(0, seq_len - 1))
+				color_counter = 0
+				for dim in range(3):
+					ax[i][j].plot(x[j, :, i*3+dim], color=colors_10(color_counter%10))
+					ax[i][j].plot(x_gen[j, :, i*3+dim], linestyle='--', color=colors_10(color_counter % 10))
+					color_counter += 1
 
 	fig.canvas.draw()
 	writer.add_figure('sample reconstruction', fig, steps_done)
