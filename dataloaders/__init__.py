@@ -1,1 +1,2 @@
 import dataloaders.buetepage
+import dataloaders.buetepage_hr
