@@ -29,16 +29,67 @@ import numpy as np
 # 	def __getitem__(self, index):
 # 		return self.traj_data[index], self.idx[index], self.labels[index], self.traj_lens[index]
 
+training_segments = [[65,518],
+					[70,571],
+					[65,525],
+					[74,549],
+					[73,556],
+					[54,549],
+					[62,564],
+					[42,513],
+					[0,411],
+					[83,461],
+					[67,542],
+					[43,411],
+					[29,467],
+					[17,431],
+					[69,477],
+					[82,451],
+					[38,465],
+					[67,435],
+					[90,447],
+					[35,435],
+					[61,487],
+					[60,413],
+					[41,458],
+					[48,430],
+					[56,426],
+					[61,550],
+					[84,469],
+					[55,383],
+					[35,381],
+					[51,389],
+					[47,446],
+					[67,453]]
+
+testing_segments = [[53,654],
+					[25,646],
+					[94,506],
+					[86,537],
+					[80,486],
+					[0,523],
+					[68,451],
+					[55,463],
+					[45,420]]
+
 class SequenceDataset(Dataset):
 	def __init__(self, datafile, train=True):
 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		with np.load(datafile, allow_pickle=True) as data:
 			if train:
-				self.traj_data = data['train_data']
+				traj_data = []
+				for i in range(len(data['train_data'])):
+					s = training_segments[i]
+					traj_data.append(data['train_data'][i][s[0]:s[1]])
+				self.traj_data = np.array(traj_data)
 				self.labels = data['train_labels']
 				self.actidx = np.array([[0,8],[8,16],[16,24],[24,32]]) # Human-robot trajs
 			else:
-				self.traj_data = data['test_data']
+				traj_data = []
+				for i in range(len(data['test_data'])):
+					s = testing_segments[i]
+					traj_data.append(data['test_data'][i][s[0]:s[1]])
+				self.traj_data = np.array(traj_data)
 				self.labels = data['test_labels']
 				self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]]) # Human-robot trajs
 			
@@ -58,11 +109,19 @@ class SequenceWindowDataset(Dataset):
 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		with np.load(datafile, allow_pickle=True) as data:
 			if train:
-				traj_data = data['train_data']
+				traj_data = []
+				for i in range(len(data['train_data'])):
+					s = training_segments[i]
+					traj_data.append(data['train_data'][i][s[0]:s[1]])
+				traj_data = np.array(traj_data)
 				labels = data['train_labels']
 				self.actidx = np.array([[0,8],[8,16],[16,24],[24,32]]) # Human-robot trajs
 			else:
-				traj_data = data['test_data']
+				traj_data = []
+				for i in range(len(data['test_data'])):
+					s = testing_segments[i]
+					traj_data.append(data['test_data'][i][s[0]:s[1]])
+				traj_data = np.array(traj_data)
 				labels = data['test_labels']
 				self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]]) # Human-robot trajs
 

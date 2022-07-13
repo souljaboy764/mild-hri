@@ -6,7 +6,7 @@ class global_config:
 		self.ROBOT_JOINTS = 7
 		self.NUM_ACTIONS = 4
 		self.optimizer = 'AdamW'
-		self.lr = 1e-4
+		self.lr = 1e-3
 		self.EPOCHS = 1000
 		self.EPOCHS_TO_SAVE = 5
 
