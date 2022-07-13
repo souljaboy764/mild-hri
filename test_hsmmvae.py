@@ -10,6 +10,7 @@ import networks
 import dataloaders
 
 import pbdlib as pbd
+import time
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description='SKID Training')
@@ -28,6 +29,7 @@ if __name__=='__main__':
 	# vae_config.window_size=40
 
 	# vae_config.latent_dim = saved_args.latent_dim
+	vae_config.latent_dim = 3
 	print("Creating Model")
 	model = getattr(networks, saved_args.model)(**(vae_config.__dict__)).to(device)
 	z_dim = model.latent_dim
@@ -45,14 +47,18 @@ if __name__=='__main__':
 		train_dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=True, window_length=model.window_size)
 		dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=False, window_length=model.window_size)
 	NUM_ACTIONS = len(dataset.actidx)
+	traj_idx = [[4, 3, 22, 2, 5, 23, 20, 18, 14, 17, 7, 1, 10, 0, 11],
+				[45, 43, 38, 26, 49, 41, 25, 39, 42, 52, 36, 46, 33, 31, 34],
+				[94, 61, 96, 85, 77, 109, 73, 105, 68, 107, 63, 102, 101, 108, 59],
+				[137, 130, 144, 120, 128, 147, 141, 118, 112, 145, 124, 135, 133, 140, 123]]
 
-	if isinstance(model, networks.VAE):
-		hsmm = ckpt['hsmm']
-		RESULTS_FOLDER = os.path.join(MODELS_FOLDER,'results')
-		os.makedirs(RESULTS_FOLDER, exist_ok=True)
-	else:
-	# for nb_states in [4,6,8,10]:
-		nb_states = saved_args.hsmm_components
+	# if isinstance(model, networks.VAE):
+	# 	hsmm = ckpt['hsmm']
+	# 	RESULTS_FOLDER = os.path.join(MODELS_FOLDER,'results')
+	# 	os.makedirs(RESULTS_FOLDER, exist_ok=True)
+	# else:
+	for nb_states in [4,6,8,10]:
+		# nb_states = saved_args.hsmm_components
 		hsmm = []
 		RESULTS_FOLDER = os.path.join(MODELS_FOLDER,'results_hsmm_'+str(nb_states))
 		os.makedirs(RESULTS_FOLDER, exist_ok=True)
@@ -66,7 +72,9 @@ if __name__=='__main__':
 			s = train_dataset.actidx[a]
 			z_encoded = []
 			# for j in range(s[0], s[1]):
-			for j in np.random.randint(s[0], s[1], 10):
+			# for j in np.random.choice(np.arange(s[0], s[1]), 15, replace=False):
+			for j in traj_idx[a]:
+				# print('IDX:',j)
 				x, label = train_dataset[j]
 				assert np.all(label == a)
 				x = torch.Tensor(x).to(device)
@@ -87,52 +95,60 @@ if __name__=='__main__':
 					z_encoded.append(torch.concat([zpost_samples[0], zpost_samples[1]], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 			hsmm[a].init_hmm_kbins(z_encoded)
 			hsmm[a].em(z_encoded)
-	print('Results Folder:',RESULTS_FOLDER)
-	print("Starting")
-	actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
-	reconstruction_error, gt_data, gen_data, lens = [], [], [], []
-	for i in range(NUM_ACTIONS):
-		s = dataset.actidx[i]
-		for j in range(s[0], s[1]):
-			x, label = dataset[j]
-			gt_data.append(x)
-			assert np.all(label == i)
-			x = torch.Tensor(x).to(device)
-			seq_len, dims = x.shape
-			x2_gt = x[:, dims//2:]
-			seq_len, dims = x.shape
-			# if model.window_size>1:
-			# 	x = x[:, :dims//2]
-			# 	bp_idx = np.zeros((seq_len-model.window_size, model.window_size))
-			# 	for k in range(model.window_size):
-			# 		bp_idx[:,k] = idx[k:seq_len-model.window_size+k]
-			# 	z1 = model(x[bp_idx].flatten(1), encode_only=True).detach().cpu().numpy()
-			# 	x2_gt = x2_gt[bp_idx].flatten(1)
-			# else:
-			z1 = model(x[:, :dims//2], encode_only=True)
-			if model.window_size == 1:
-				z1_vel = torch.diff(z1, prepend=z1[0:1], dim=0)
-				z2, _ = hsmm[i].condition(torch.concat([z1, z1_vel],dim=-1).detach().cpu().numpy(), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim))
+		print('Results Folder:',RESULTS_FOLDER)
+		print("Starting")
+		actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
+		reconstruction_error, gt_data, gen_data, lens,times = [], [], [], [], []
+		for i in range(NUM_ACTIONS):
+			s = dataset.actidx[i]
+			for j in range(s[0], s[1]):
+				x, label = dataset[j]
+				gt_data.append(x)
+				assert np.all(label == i)
+				x = torch.Tensor(x).to(device)
+				seq_len, dims = x.shape
+				x2_gt = x[:, dims//2:]
+				seq_len, dims = x.shape
+				# if model.window_size>1:
+				# 	x = x[:, :dims//2]
+				# 	bp_idx = np.zeros((seq_len-model.window_size, model.window_size))
+				# 	for k in range(model.window_size):
+				# 		bp_idx[:,k] = idx[k:seq_len-model.window_size+k]
+				# 	z1 = model(x[bp_idx].flatten(1), encode_only=True).detach().cpu().numpy()
+				# 	x2_gt = x2_gt[bp_idx].flatten(1)
+				# else:
+				t0 = time.time()
+				z1 = model(x[:, :dims//2], encode_only=True)
+				if model.window_size == 1:
+					z1_vel = torch.diff(z1, prepend=z1[0:1], dim=0)
+					z2, _ = hsmm[i].condition(torch.concat([z1, z1_vel],dim=-1).detach().cpu().numpy(), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim))
+				else:
+					z2, _ = hsmm[i].condition(z1.detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				if np.any(np.isnan(z2)):
+					print('z2 nan',actions[i],nb_states,os.path.basename(args.ckpt))
+				x2_gen = model._output(model._decoder(torch.Tensor(z2).to(device)))
+				if torch.any(torch.isnan(x2_gen)):
+					print('x2_gen nan',actions[i],nb_states,os.path.basename(args.ckpt))
+				times.append((time.time()-t0)/seq_len)
+				reconstruction_error.append(F.mse_loss(x2_gt, x2_gen,reduction='none').detach().cpu().numpy())
+				gen_data.append(x2_gen.detach().cpu().numpy())
+				lens.append(seq_len)
+				
+			if model.window_size>1:
+				x1_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints*model.window_size, 3)
+				x2_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints*model.window_size, 3)
+				x2_gen = gen_data[-1].reshape(-1, model.window_size*model.num_joints, 3)
 			else:
-				z2, _ = hsmm[i].condition(z1.detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-			x2_gen = model._output(model._decoder(torch.Tensor(z2).to(device)))
-			reconstruction_error.append(F.mse_loss(x2_gt, x2_gen,reduction='none').detach().cpu().numpy())
-			gen_data.append(x2_gen.detach().cpu().numpy())
-			lens.append(seq_len)
-			
-		if model.window_size>1:
-			x1_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints*model.window_size, 3)
-			x2_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints*model.window_size, 3)
-			x2_gen = gen_data[-1].reshape(-1, model.window_size*model.num_joints, 3)
-		else:
-			x1_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints, 3)
-			x2_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints, 3)
-			x2_gen = gen_data[-1].reshape(-1, model.num_joints, 3)
-		np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions_action_'+str(i)), x1_gt=x1_gt, x2_gt=x2_gt, x2_gen=x2_gen)
-		np.set_printoptions(precision=5)
-	reconstruction_error = np.concatenate(reconstruction_error,axis=0)
-	reconstruction_error = reconstruction_error.reshape((-1,model.window_size,model.num_joints,3)).sum(-1).mean(-1)#.mean(-1)
-	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'recon_error_hsmm.npz'), error=reconstruction_error)
+				x1_gt = gt_data[-1][:, :dims//2].reshape(-1, model.num_joints, 3)
+				x2_gt = gt_data[-1][:, dims//2:].reshape(-1, model.num_joints, 3)
+				x2_gen = gen_data[-1].reshape(-1, model.num_joints, 3)
+			np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions_action_'+str(i)), x1_gt=x1_gt, x2_gt=x2_gt, x2_gen=x2_gen)
+			np.set_printoptions(precision=5)
+		reconstruction_error = np.concatenate(reconstruction_error,axis=0)
+		reconstruction_error = reconstruction_error.reshape((-1,model.window_size,model.num_joints,3)).sum(-1).mean(-1)#.mean(-1)
+		np.savez_compressed(os.path.join(RESULTS_FOLDER, 'recon_error_hsmm.npz'), error=reconstruction_error)
+		np.savez_compressed(os.path.join(RESULTS_FOLDER, 'hsmm.npz'), hsmm=hsmm)
+		print(np.mean(times))
 		# fig = plt.figure()
 		# ax = fig.add_subplot(1, 1, 1, projection='3d')
 		# ax.view_init(20, -45)

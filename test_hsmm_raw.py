@@ -25,6 +25,7 @@ if __name__=='__main__':
 		RESULTS_FOLDER = os.path.join('logs/rawdata_window_hsmm_/results_hsmm_'+str(nb_states))
 		nb_dim = 2*40*4*3
 	NUM_ACTIONS = len(dataset.actidx)
+	print(RESULTS_FOLDER)
 	os.makedirs(RESULTS_FOLDER, exist_ok=True)
 	
 	for a in range(len(train_dataset.actidx)):
@@ -42,8 +43,9 @@ if __name__=='__main__':
 			else:
 				samples.append(x)
 		hsmm[-1].init_hmm_kbins(samples)
-		hsmm[-1].em(samples, reg=1e-2)
-		print(hsmm[-1].Trans==0)
+		print('Training',a)
+		hsmm[-1].em(samples)
+		# print(hsmm[-1].Trans==0)
 	print("Starting")
 	actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
 	reconstruction_error, gt_data, gen_data, lens = [], [], [], []
@@ -79,7 +81,9 @@ if __name__=='__main__':
 	reconstruction_error = np.concatenate(reconstruction_error,axis=0)
 	reconstruction_error = reconstruction_error.reshape((-1, window_size, 4, 3)).sum(-1).mean(-1)#.mean(-1)
 	print(np.any(np.isnan(reconstruction_error)))
+	print(reconstruction_error.shape)
 	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'recon_error_hsmm.npz'), error=reconstruction_error)
+	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'hsmm.npz'), hsmm=hsmm)
 		# fig = plt.figure()
 		# ax = fig.add_subplot(1, 1, 1, projection='3d')
 		# ax.view_init(20, -45)
