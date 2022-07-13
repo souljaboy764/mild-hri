@@ -24,11 +24,12 @@ if __name__=='__main__':
 	saved_args = hyperparams['args'].item() # overwrite args if loading from checkpoint
 	# vae_config = getattr(config, saved_args.dataset).ae_config()
 	ae_config = hyperparams['ae_config'].item()
-	ae_config.window_size=40
+	robot_config = robot_vae_config()
+	ae_config.window_size = robot_config.window_size = 1
 
 	print("Creating Model")
 	model_h = getattr(networks, saved_args.model)(**(ae_config.__dict__)).to(device)
-	model_r = getattr(networks, saved_args.model)(**(robot_vae_config().__dict__)).to(device)
+	model_r = getattr(networks, saved_args.model)(**(robot_config.__dict__)).to(device)
 	zh_dim = model_h.latent_dim
 	zr_dim = model_r.latent_dim
 	
@@ -77,6 +78,7 @@ if __name__=='__main__':
 				z2, _ = hsmm[i].condition(z1.detach().cpu().numpy(), dim_in=slice(0, zh_dim), dim_out=slice(zh_dim, zh_dim+zr_dim))
 			# z2, _ = hsmm[i].condition(z1, dim_in=slice(0, zh_dim), dim_out=slice(zh_dim, 2*zh_dim))
 			x2_gen = model_r._output(model_r._decoder(torch.Tensor(z2).to(device)))
+			# x2_gen, _, _ = model_r(x2_gt)
 			reconstruction_error.append(F.mse_loss(x2_gt, x2_gen,reduction='none').detach().cpu().numpy())
 			gen_data.append(x2_gen.detach().cpu().numpy())
 			
@@ -88,7 +90,8 @@ if __name__=='__main__':
 			x1_gt = gt_data[-1][:, :model_h.input_dim].reshape(-1, model_h.num_joints, model_h.joint_dims)
 			x2_gt = gt_data[-1][:, -model_r.input_dim:].reshape(-1, model_r.num_joints, model_r.joint_dims)
 			x2_gen = gen_data[-1].reshape(-1, model_r.num_joints, model_r.joint_dims)
-		np.savez_compressed('hsmmvae_hri_test.npz', x_gen=np.array(gen_data), test_data=np.array(gt_data), lens=lens)
+	np.savez_compressed('hsmmvae_hri_test.npz', x_gen=np.array(gen_data), test_data=np.array(gt_data), lens=lens)
+		
 		# np.savez_compressed('predictions_action_'+str(i), x1_gt=x1_gt, x2_gt=x2_gt, x2_gen=x2_gen)
 		# np.set_printoptions(precision=5)
 	# if model_h.window_size>1:
