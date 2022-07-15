@@ -11,3 +11,5 @@ TODO:
 - Each trajectory will have `T_N` number of time steps
 - Each timestep has `D` degrees of freedom.
 - If each action has the same number of demonstrations which are sampled to have the same length, then the dataset would be a numpy array of size (A, N, T, D)
+
+Current Good Model: logs/fullvae_rarm_window_alphaargmaxnocond_07132220/models/0570.pth

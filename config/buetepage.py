@@ -6,8 +6,8 @@ class global_config:
 		self.ROBOT_JOINTS = 7
 		self.NUM_ACTIONS = 4
 		self.optimizer = 'AdamW'
-		self.lr = 1e-3
-		self.EPOCHS = 1000
+		self.lr = 1e-4
+		self.EPOCHS = 2000
 		self.EPOCHS_TO_SAVE = 5
 
 class ae_config:
@@ -32,7 +32,7 @@ class robot_vae_config:
 		self.joint_dims = 1
 		self.window_size = config.WINDOW_LEN
 		self.hidden_sizes = [250, 150]
-		self.latent_dim = 3
+		self.latent_dim = 7
 		self.beta = 0.001
 		self.activation = 'LeakyReLU'
 		self.z_prior_mean = 0

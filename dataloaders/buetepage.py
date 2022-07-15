@@ -84,6 +84,9 @@ class SequenceWindowDataset(Dataset):
 				self.labels.append(labels[i][:trajs_concat.shape[0]])
 			
 			self.len = len(self.traj_data)
+			self.labels = np.zeros(self.len)
+			for idx in range(len(self.actidx)):
+				self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
 
 	def __len__(self):
 		return self.len
