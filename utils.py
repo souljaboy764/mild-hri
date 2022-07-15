@@ -175,7 +175,7 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 	if model.window_size>1:
 		x = x.reshape(2,-1,model.window_size,model.num_joints,3)
 		x_gen = x_gen.reshape(2,-1,model.window_size,model.num_joints,3)
-		fig, ax = plt.subplots(nrows=5, ncols=model.num_joints, figsize=(28, 16), sharex=True, sharey=True)
+		fig, ax = plt.subplots(nrows=5, ncols=model.num_joints, figsize=(28, 16), sharex=True)
 		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
 		plt.subplots_adjust(
@@ -198,7 +198,7 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 					ax[i][j].plot(x_gen[1, idx, :, j, dim], linestyle='-.', color=colors_10(color_counter % 10))
 					color_counter += 1
 	else:
-		fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True, sharey=True)
+		fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True)
 		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
 		plt.subplots_adjust(
@@ -219,10 +219,139 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 					color_counter += 1
 
 	fig.canvas.draw()
-	writer.add_figure('sample reconstruction', fig, steps_done)
+	writer.add_figure(prefix+'/sample reconstruction', fig, steps_done)
 	plt.close(fig)
 
 def write_summaries_hr(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done, prefix, model):
+	writer.add_scalar(prefix+'/loss', sum(loss), steps_done)
+	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
+	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
+	
+	# # # writer.add_embedding(zx_samples[:100],global_step=steps_done, tag=prefix+'/q(z|x)')
+	# x_gen = x_gen.detach().cpu().numpy()
+	# x = x.detach().cpu().numpy()
+	# if prefix=='train' and len(x_gen.shape)==3:
+	# 	x_gen = x_gen[-1]
+	
+	# seq_len, dims = x.shape
+	
+	# fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(28, 16), sharex=True)
+	# fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+
+	# plt.subplots_adjust(
+	# 	left=0.05,  # the left side of the subplots of the figure
+	# 	right=0.95,  # the right side of the subplots of the figure
+	# 	bottom=0.05,  # the bottom of the subplots of the figure
+	# 	top=0.95,  # the top of the subplots of the figure
+	# 	wspace=0.05,  # the amount of width reserved for blank space between subplots
+	# 	hspace=0.05,  # the amount of height reserved for white space between subplots
+	# )
+
+	# if model.window_size>1:
+	# 	# xh_gt = x[:, :480].reshape(seq_len,model.window_size,4,3)
+	# 	# xr_gt = x[:, 480:].reshape(seq_len,model.window_size,7)
+	# 	# xh_gen = x_gen[:, :480].reshape(seq_len,model.window_size,4,3)
+	# 	# xr_gen = x_gen[:, 480:].reshape(seq_len,model.window_size,7)
+	# 	xh_gt = x[:, :12].reshape(seq_len,4,3)
+	# 	xr_gt = x[:, 480:480+7]
+	# 	xh_gen = x_gen[:, :12].reshape(seq_len,4,3)
+	# 	xr_gen = x_gen[:, 480:480+7]
+		
+		# # fig, ax = plt.subplots(nrows=4, ncols=5, figsize=(28, 16), sharex=True)
+		# # fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+
+		# # plt.subplots_adjust(
+		# # 	left=0.05,  # the left side of the subplots of the figure
+		# # 	right=0.95,  # the right side of the subplots of the figure
+		# # 	bottom=0.05,  # the bottom of the subplots of the figure
+		# # 	top=0.95,  # the top of the subplots of the figure
+		# # 	wspace=0.05,  # the amount of width reserved for blank space between subplots
+		# # 	hspace=0.05,  # the amount of height reserved for white space between subplots
+		# # )
+		# # for i in range(4):
+		# # 	idx = np.random.randint(0, seq_len)
+		# # 	# Plot human dofs
+		# # 	for j in range(4):
+		# # 		ax[i][j].set(xlim=(0, model.window_size - 1))
+		# # 		color_counter = 0
+		# # 		for dim in range(3):
+		# # 			ax[i][j].plot(xh_gt[idx, :, j, dim], color=colors_10(color_counter%10))
+		# # 			ax[i][j].plot(xh_gen[idx, :, j, dim], linestyle='--', color=colors_10(color_counter % 10))
+		# # 			color_counter += 1
+		# # 	# Plot robot dofs
+		# # 	ax[i][4].set(xlim=(0, model.window_size - 1))
+		# # 	color_counter = 0
+		# # 	for dim in range(7):
+		# # 		ax[i][4].plot(xr_gt[idx, :, dim], color=colors_10(color_counter%10))
+		# # 		ax[i][4].plot(xr_gen[idx, :, dim], linestyle='--', color=colors_10(color_counter % 10))
+		# # 		color_counter += 1
+		# fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(28, 16), sharex=True)
+		# fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+
+		# plt.subplots_adjust(
+		# 	left=0.05,  # the left side of the subplots of the figure
+		# 	right=0.95,  # the right side of the subplots of the figure
+		# 	bottom=0.05,  # the bottom of the subplots of the figure
+		# 	top=0.95,  # the top of the subplots of the figure
+		# 	wspace=0.05,  # the amount of width reserved for blank space between subplots
+		# 	hspace=0.05,  # the amount of height reserved for white space between subplots
+		# )
+		# for i in range(4):
+		# 	ax[i].set(xlim=(0, seq_len - 1))
+		# 	color_counter = 0
+		# 	for dim in range(3):
+		# 		ax[i].plot(xh_gt[:,0, i, dim], color=colors_10(color_counter%10))
+		# 		ax[i].plot(xh_gen[:,0, i, dim], linestyle='--', color=colors_10(color_counter % 10))
+		# 		for t in range(seq_len):
+		# 			ax[i].plot(np.arange(t+1,t+model.window_size), xh_gt[t,1:, i, dim], color=colors_10(color_counter%10), alpha=0.4)
+		# 			ax[i].plot(np.arange(t+1,t+model.window_size), xh_gen[t,1:, i, dim], linestyle='--', color=colors_10(color_counter % 10), alpha=0.4)
+		# 		color_counter += 1
+		# ax[4].set(xlim=(0, seq_len - 1))
+		# color_counter = 0
+		# for dim in range(7):
+		# 	ax[4].plot(xr_gt[:, dim], color=colors_10(color_counter%10))
+		# 	ax[4].plot(xr_gen[:, dim], linestyle='--', color=colors_10(color_counter % 10))
+		# 	for t in range(seq_len):
+		# 		ax[4].plot(np.arange(t+1,t+model.window_size), xr_gt[t,1:, dim], color=colors_10(color_counter%10), alpha=0.4)
+		# 		ax[4].plot(np.arange(t+1,t+model.window_size), xr_gen[t,1:, dim], linestyle='--', color=colors_10(color_counter % 10), alpha=0.4)
+		# 	color_counter += 1
+	# else:
+
+	# 	xh_gt = x[:, :12].reshape(seq_len,4,3)
+	# 	xr_gt = x[:, 12:]
+	# 	xh_gen = x_gen[:, :12].reshape(seq_len,4,3)
+	# 	xr_gen = x_gen[:, 12:]
+
+	# fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(28, 16), sharex=True)
+	# fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+	# plt.subplots_adjust(
+	# 	left=0.05,  # the left side of the subplots of the figure
+	# 	right=0.95,  # the right side of the subplots of the figure
+	# 	bottom=0.05,  # the bottom of the subplots of the figure
+	# 	top=0.95,  # the top of the subplots of the figure
+	# 	wspace=0.05,  # the amount of width reserved for blank space between subplots
+	# 	hspace=0.05,  # the amount of height reserved for white space between subplots
+	# )
+	# for i in range(4):
+	# 	ax[i].set(xlim=(0, seq_len - 1))
+	# 	color_counter = 0
+	# 	for dim in range(3):
+	# 		ax[i].plot(xh_gt[:, i, dim], color=colors_10(color_counter%10))
+	# 		ax[i].plot(xh_gen[:, i, dim], linestyle='--', color=colors_10(color_counter % 10))
+	# 		color_counter += 1
+	# ax[4].set(xlim=(0, seq_len - 1))
+	# color_counter = 0
+	# for dim in range(7):
+	# 	ax[4].plot(xr_gt[:, dim], color=colors_10(color_counter%10))
+	# 	ax[4].plot(xr_gen[:, dim], linestyle='--', color=colors_10(color_counter % 10))
+	# 	color_counter += 1
+
+	# fig.canvas.draw()
+	# writer.add_figure(prefix+'/sample reconstruction', fig, steps_done)
+	# plt.close(fig)
+
+
+def write_summaries_robot(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done, prefix, model):
 	writer.add_scalar(prefix+'/loss', sum(loss), steps_done)
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
@@ -235,25 +364,11 @@ def write_summaries_hr(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done
 	
 	seq_len, dims = x.shape
 	
-	fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(28, 16), sharex=True, sharey=True)
-	fig.tight_layout(pad=0, h_pad=0, w_pad=0)
-
-	plt.subplots_adjust(
-		left=0.05,  # the left side of the subplots of the figure
-		right=0.95,  # the right side of the subplots of the figure
-		bottom=0.05,  # the bottom of the subplots of the figure
-		top=0.95,  # the top of the subplots of the figure
-		wspace=0.05,  # the amount of width reserved for blank space between subplots
-		hspace=0.05,  # the amount of height reserved for white space between subplots
-	)
-
 	if model.window_size>1:
-		xh_gt = x[:, :480].reshape(seq_len,model.window_size,4,3)
 		xr_gt = x[:, 480:].reshape(seq_len,model.window_size,7)
-		xh_gen = x_gen[:, :480].reshape(seq_len,model.window_size,4,3)
-		xr_gen = x_gen[:, 480:].reshape(seq_len,model.window_size,7)
+		xr_gen = x_gen.reshape(seq_len,model.window_size,7)
 		
-		fig, ax = plt.subplots(nrows=4, ncols=5, figsize=(28, 16), sharex=True, sharey=True)
+		fig, ax = plt.subplots(nrows=7, ncols=4, figsize=(28, 16), sharex=True, sharey='row')
 		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
 		plt.subplots_adjust(
@@ -266,30 +381,17 @@ def write_summaries_hr(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done
 		)
 		for i in range(4):
 			idx = np.random.randint(0, seq_len)
-			# Plot human dofs
-			for j in range(4):
-				ax[i][j].set(xlim=(0, model.window_size - 1))
-				color_counter = 0
-				for dim in range(3):
-					ax[i][j].plot(xh_gt[idx, :, j, dim], color=colors_10(color_counter%10))
-					ax[i][j].plot(xh_gen[idx, :, j, dim], linestyle='--', color=colors_10(color_counter % 10))
-					color_counter += 1
 			# Plot robot dofs
-			ax[i][4].set(xlim=(0, model.window_size - 1))
 			color_counter = 0
 			for dim in range(7):
-				ax[i][4].plot(xr_gt[idx, :, dim], color=colors_10(color_counter%10))
-				ax[i][4].plot(xr_gen[idx, :, dim], linestyle='--', color=colors_10(color_counter % 10))
+				ax[dim][i].set(xlim=(0, model.window_size - 1))
+				ax[dim][i].plot(xr_gt[idx, :, dim], color=colors_10(color_counter%10))
+				ax[dim][i].plot(xr_gen[idx, :, dim], linestyle='--', color=colors_10(color_counter % 10))
 				color_counter += 1
 	else:
-		fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(28, 16), sharex=True, sharey=True)
+		fig, ax = plt.subplots(nrows=7, ncols=1, figsize=(28, 16), sharex=True)
 		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
-
-		xh_gt = x[:, :12].reshape(seq_len,4,3)
-		xr_gt = x[:, 12:]
-		xh_gen = x_gen[:, :12].reshape(seq_len,4,3)
-		xr_gen = x_gen[:, 12:]
-
+		
 		plt.subplots_adjust(
 			left=0.05,  # the left side of the subplots of the figure
 			right=0.95,  # the right side of the subplots of the figure
@@ -298,18 +400,13 @@ def write_summaries_hr(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done
 			wspace=0.05,  # the amount of width reserved for blank space between subplots
 			hspace=0.05,  # the amount of height reserved for white space between subplots
 		)
-		for i in range(4):
-			ax[i].set(xlim=(0, seq_len - 1))
-			color_counter = 0
-			for dim in range(3):
-				ax[i].plot(xh_gt[:, i, dim], color=colors_10(color_counter%10))
-				ax[i].plot(xh_gen[:, i, dim], linestyle='--', color=colors_10(color_counter % 10))
-				color_counter += 1
-		ax[4].set(xlim=(0, seq_len - 1))
+		xr_gt = x[:, 12:]
+		xr_gen = x_gen
 		color_counter = 0
 		for dim in range(7):
-			ax[4].plot(xr_gt[:, dim], color=colors_10(color_counter%10))
-			ax[4].plot(xr_gen[:, dim], linestyle='--', color=colors_10(color_counter % 10))
+			ax[dim].set(xlim=(0, seq_len - 1))
+			ax[dim].plot(xr_gt[:, dim], color=colors_10(color_counter%10))
+			ax[dim].plot(xr_gen[:, dim], linestyle='--', color=colors_10(color_counter % 10))
 			color_counter += 1
 
 	fig.canvas.draw()
