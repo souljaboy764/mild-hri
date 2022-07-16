@@ -12,6 +12,8 @@ import dataloaders
 import pbdlib as pbd
 import time
 
+import config, networks, dataloaders
+
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description='SKID Training')
 	parser.add_argument('--ckpt', type=str, metavar='CKPT', required=True, # logs/fullvae_rarm_window_07081252_klconditionedclass/models/final.pth
@@ -22,16 +24,22 @@ if __name__=='__main__':
 	torch.autograd.set_detect_anomaly(True)
 
 	MODELS_FOLDER = os.path.dirname(args.ckpt)
-	hyperparams = np.load(os.path.join(MODELS_FOLDER,'hyperparams.npz'), allow_pickle=True)
-	saved_args = hyperparams['args'].item() # overwrite args if loading from checkpoint
+	# hyperparams = np.load(os.path.join(MODELS_FOLDER,'hyperparams.npz'), allow_pickle=True)
+	# saved_args = hyperparams['args'].item() # overwrite args if loading from checkpoint
 	# vae_config = getattr(config, saved_args.dataset).ae_config()
-	vae_config = hyperparams['ae_config'].item()
+	# vae_config = hyperparams['ae_config'].item()
 	# vae_config.window_size=40
+	vae_config = config.nuitrack.ae_config()
+	vae_config.latent_dim = 5
+	# vae_config.window_size = 5
+
 
 	# vae_config.latent_dim = saved_args.latent_dim
 	# vae_config.latent_dim = 3
 	print("Creating Model")
-	model = getattr(networks, saved_args.model)(**(vae_config.__dict__)).to(device)
+	# model = getattr(networks, saved_args.model)(**(vae_config.__dict__)).to(device)
+	model = networks.FullCovVAE(**(vae_config.__dict__)).to(device)
+	
 	z_dim = model.latent_dim
 	# print('Latent Dim:', z_dim, saved_args.latent_dim)
 	
@@ -40,12 +48,19 @@ if __name__=='__main__':
 	model.load_state_dict(ckpt['model'])
 	model.eval()
 	print("Reading Data")
+	# if model.window_size ==1:
+	# 	train_dataset = dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=True)
+	# 	dataset = getattr(dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=False)
+	# else:
+	# 	train_dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=True, window_length=model.window_size)
+	# 	dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=False, window_length=model.window_size)
+	src = 'data/nuitrack/labelled_sequences.npz'
 	if model.window_size ==1:
-		train_dataset = getattr(dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=True)
-		dataset = getattr(dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=False)
+		train_dataset = dataloaders.nuitrack.SequenceDataset(src, train=True)
+		dataset = dataloaders.nuitrack.SequenceDataset(src, train=False)
 	else:
-		train_dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=True, window_length=model.window_size)
-		dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=False, window_length=model.window_size)
+		train_dataset = dataloaders.nuitrack.SequenceWindowDataset(src, train=True, window_length=model.window_size)
+		dataset = dataloaders.nuitrack.SequenceWindowDataset(src, train=False, window_length=model.window_size)
 	NUM_ACTIONS = len(dataset.actidx)
 	traj_idx = [[4, 3, 22, 2, 5, 23, 20, 18, 14, 17, 7, 1, 10, 0, 11],
 				[45, 43, 38, 26, 49, 41, 25, 39, 42, 52, 36, 46, 33, 31, 34],
@@ -58,7 +73,7 @@ if __name__=='__main__':
 		os.makedirs(RESULTS_FOLDER, exist_ok=True)
 	else:
 	# for nb_states in [10]:#[4,6,8,10]:
-		nb_states = saved_args.hsmm_components
+		nb_states = 8
 		hsmm = []
 		RESULTS_FOLDER = os.path.join(MODELS_FOLDER,'results_hsmm_'+str(nb_states))
 		os.makedirs(RESULTS_FOLDER, exist_ok=True)
@@ -145,9 +160,14 @@ if __name__=='__main__':
 		np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions_action_'+str(i)), x1_gt=x1_gt, x2_gt=x2_gt, x2_gen=x2_gen)
 		np.set_printoptions(precision=5)
 	reconstruction_error = np.concatenate(reconstruction_error,axis=0)
+	gen_data = np.concatenate(gen_data,axis=0)
+	gt_data = np.concatenate(gt_data,axis=0)
+	print(gt_data.shape, gen_data.shape)
 	reconstruction_error = reconstruction_error.reshape((-1,model.window_size,model.num_joints,3)).sum(-1).mean(-1)#.mean(-1)
 	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'recon_error_hsmm.npz'), error=reconstruction_error)
 	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'hsmm.npz'), hsmm=hsmm)
+	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions.npz'), x_gt=gt_data, x2_gen=gen_data,lens=lens)
+	
 	print(np.mean(times))
 	# fig = plt.figure()
 	# ax = fig.add_subplot(1, 1, 1, projection='3d')
