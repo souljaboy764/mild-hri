@@ -80,40 +80,40 @@ if __name__=='__main__':
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
 	
-	nb_states = args.hsmm_components
-	hsmm = []
-	for i in range(NUM_ACTIONS):
-		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
-		print('Training HSMM',i)
-		z_encoded = []
-		s = train_iterator.dataset.actidx[i]
-		for j in range(s[0], s[1]):
-			x, label = train_iterator.dataset[j]
-			assert np.all(label == i)
-			x = torch.Tensor(x).to(device)
-			seq_len, dims = x.shape
-			# xh = x[:, :12]
-			# xr = x[:, 12:] # x[0] = Agent 1, x[1] = Agent 2
-			xh = x[:, :model_h.input_dim]
-			xr = x[:, -model_r.input_dim:]
+	# nb_states = args.hsmm_components
+	# hsmm = []
+	# for i in range(NUM_ACTIONS):
+	# 	hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
+	# 	print('Training HSMM',i)
+	# 	z_encoded = []
+	# 	s = train_iterator.dataset.actidx[i]
+	# 	for j in range(s[0], s[1]):
+	# 		x, label = train_iterator.dataset[j]
+	# 		assert np.all(label == i)
+	# 		x = torch.Tensor(x).to(device)
+	# 		seq_len, dims = x.shape
+	# 		# xh = x[:, :12]
+	# 		# xr = x[:, 12:] # x[0] = Agent 1, x[1] = Agent 2
+	# 		xh = x[:, :model_h.input_dim]
+	# 		xr = x[:, -model_r.input_dim:]
 			
-			with torch.no_grad():
-				zh = model_h(xh, encode_only=True)
-				zr = model_r(xr, encode_only=True)
+	# 		with torch.no_grad():
+	# 			zh = model_h(xh, encode_only=True)
+	# 			zr = model_r(xr, encode_only=True)
 
-			if model_h.window_size == 1:
-				zh_vel = torch.diff(zh, prepend=zh[0:1], dim=0)
-				zr_vel = torch.diff(zr, prepend=zr[0:1], dim=0)
-				z_encoded.append(torch.concat([zh, zh_vel, zr, zr_vel], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-			else:
-				z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-		hsmm[i].init_hmm_kbins(z_encoded)
-		hsmm[i].em(z_encoded)
-		print('')
+	# 		if model_h.window_size == 1:
+	# 			zh_vel = torch.diff(zh, prepend=zh[0:1], dim=0)
+	# 			zr_vel = torch.diff(zr, prepend=zr[0:1], dim=0)
+	# 			z_encoded.append(torch.concat([zh, zh_vel, zr, zr_vel], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+	# 		else:
+	# 			z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+	# 	hsmm[i].init_hmm_kbins(z_encoded)
+	# 	hsmm[i].em(z_encoded)
+	# 	print('')
 
-	np.savez_compressed('hr_hsmm_vae/hsmm.npz',hsmm=hsmm)
-	np.savez_compressed('hr_hsmm_vae/args.npz',args=args)
-	# hsmm = np.load('hr_hsmm/hsmm.npz',allow_pickle=True)['hsmm']
+	# np.savez_compressed('hr_hsmm_vae/hsmm.npz',hsmm=hsmm)
+	# np.savez_compressed('hr_hsmm_vae/args.npz',args=args)
+	hsmm = np.load('hr_hsmm/hsmm.npz',allow_pickle=True)['hsmm']
 
 	reconstruction_error, gt_data, gen_data, vae_gen_data, lens = [], [], [], [], []
 	zh_dim = model_h.latent_dim
@@ -153,17 +153,18 @@ if __name__=='__main__':
 			gen_data.append(xr_hsmm.detach().cpu().numpy())
 			lens.append(seq_len)
 		
-		np.savez_compressed(os.path.join('hr_hsmm/predictions_action_'+str(i)), 
-											x1_gt=xh.detach().cpu().numpy(), 
-											x2_gt=xr.detach().cpu().numpy(), 
-											x2_gen=xr_hsmm.detach().cpu().numpy(), 
-											x2_vae=xr_vae.detach().cpu().numpy())
+		# np.savez_compressed(os.path.join('hr_hsmm/predictions_action_'+str(i)), 
+		# 									x1_gt=xh.detach().cpu().numpy(), 
+		# 									x2_gt=xr.detach().cpu().numpy(), 
+		# 									x2_gen=xr_hsmm.detach().cpu().numpy(), 
+		# 									x2_vae=xr_vae.detach().cpu().numpy())
 		np.set_printoptions(precision=5)
 	reconstruction_error = np.concatenate(reconstruction_error,axis=0)
 	# reconstruction_error = reconstruction_error.reshape((-1,model_r.window_size,model_r.num_joints,3)).sum(-1).mean(-1)#.mean(-1)
-	np.savez_compressed(os.path.join('hr_hsmm_vae/recon_error.npz'), error=reconstruction_error)
+	# np.savez_compressed(os.path.join('hr_hsmm_vae/recon_error.npz'), error=reconstruction_error)
 	gt_data = np.concatenate(gt_data,axis=0)
 	gen_data = np.concatenate(gen_data,axis=0)
 	vae_gen_data = np.concatenate(vae_gen_data,axis=0)
-	np.savez_compressed(os.path.join('hr_hsmm_vae/predictions.npz'), gt=gt_data, vae_gen=vae_gen_data, xr_hsmm=gen_data)
+	print(reconstruction_error.shape, gt_data.shape, test_iterator.dataset.actidx,lens,np.cumsum(lens))
+	# np.savez_compressed(os.path.join('hr_hsmm_vae/predictions.npz'), gt=gt_data, vae_gen=vae_gen_data, xr_hsmm=gen_data,lens=lens)
 			
