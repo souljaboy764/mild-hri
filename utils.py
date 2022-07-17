@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 
+from tf.transformations import *
+
 import networks
 colors_10 = get_cmap('tab10')
 
@@ -475,3 +477,98 @@ def batchIsPD(B):
 		return True
 	except:
 		return False
+
+joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
+# joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
+# joints = ['neck', 'right_shoulder', 'right_elbow', 'right_hand']
+joints_dic = {joints[i]:i for i in range(len(joints))}
+
+
+def angle(a,b):
+	dot = np.dot(a,b)
+	return np.arccos(dot/(np.linalg.norm(a)*np.linalg.norm(b)))
+
+def projectToPlane(plane, vec):
+	return (vec - plane)*np.dot(plane,vec)
+
+def rotation_normalization(skeleton):
+	leftShoulder = skeleton[joints_dic["left_shoulder"]]
+	rightShoulder = skeleton[joints_dic["right_shoulder"]]
+	waist = skeleton[joints_dic["waist"]]
+	
+	xAxisHelper = waist - rightShoulder
+	yAxis = leftShoulder - rightShoulder # right to left
+	xAxis = np.cross(xAxisHelper, yAxis) # out of the human(like an arrow in the back)
+	zAxis = np.cross(xAxis, yAxis) # like spine, but straight
+	
+	xAxis /= np.linalg.norm(xAxis)
+	yAxis /= np.linalg.norm(yAxis)
+	zAxis /= np.linalg.norm(zAxis)
+
+	return np.array([[xAxis[0], xAxis[1], xAxis[2]],
+					 [yAxis[0], yAxis[1], yAxis[2]],
+					 [zAxis[0], zAxis[1], zAxis[2]]])
+
+def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
+	
+
+	# T = np.eye(4)
+	# T[:3,3] = skeleton[0]
+	# T[:3,:3] = rotation_normalization(skeleton)
+	# rightShoulder = skeleton[joints_dic["right_shoulder"]] - T[:3,3]
+	# rightShoulder = T[:3,:3].dot(rightShoulder)
+	# rightElbow = skeleton[joints_dic["right_elbow"]] - T[:3,3]
+	# rightElbow = T[:3,:3].dot(rightElbow)
+	# rightHand = skeleton[joints_dic["right_hand"]] - T[:3,3]
+	# rightHand = T[:3,:3].dot(rightHand)
+
+	# rightShoulder = skeleton[joints_dic["right_shoulder"]]
+	# rightElbow = skeleton[joints_dic["right_elbow"]]
+	# rightHand = skeleton[joints_dic["right_hand"]]
+
+	rightShoulder = skeleton[1]
+	rightElbow = skeleton[2]
+	rightHand = skeleton[3]
+	
+	rightYaw = 0
+	rightPitch = 0
+	rightRoll = 0
+	rightElbowAngle = 0
+	
+	# Recreating arm with upper and under arm
+	rightUpperArm = rightElbow - rightShoulder
+	rightUnderArm = rightHand - rightElbow
+
+	rightElbowAngle = angle(rightUpperArm, rightUnderArm)
+
+	armlengthRight = np.linalg.norm(rightUpperArm)
+	rightYaw = np.arctan2(rightUpperArm[1],-rightUpperArm[2]) # Comes from robot structure
+	# rightYaw -= 0.009
+	rightPitch = np.arctan2(rightUpperArm[0], rightUpperArm[2]) # Comes from robot structure
+	rightPitch -= np.pi/2
+	
+	# Recreating under Arm Position with known Angles(without roll)
+	rightRotationAroundY = euler_matrix(0, rightPitch, 0,)[:3,:3]
+	rightRotationAroundX = euler_matrix(0, 0, rightYaw)[:3,:3]
+	rightElbowRotation = euler_matrix(0, 0, rightElbowAngle)[:3,:3]
+
+	rightUnderArmInZeroPos = np.array([np.linalg.norm(rightUnderArm), 0, 0.])
+	rightUnderArmWithoutRoll = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightElbowRotation,rightUnderArmInZeroPos)))
+
+	# Calculating the angle betwenn actual under arm position and the one calculated without roll
+	rightRoll = angle(rightUnderArmWithoutRoll, rightUnderArm)
+	
+	#This is a check which sign the angle has as the calculation only produces positive angles
+	rightRotationAroundArm = euler_matrix(0, 0, -rightRoll)[:3, :3]
+	rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
+	r1saver = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
+	
+	rightRotationAroundArm = euler_matrix(0, 0, rightRoll)[:3, :3]
+	rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
+	r1 = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
+	
+	# if (r1 > r1saver):
+	# 	rightRoll = -rightRoll
+
+	return np.array([rightPitch, rightYaw, rightRoll, rightElbowAngle])
+
