@@ -13,6 +13,11 @@ import pbdlib as pbd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
+import matplotlib
+matplotlib.use('Qt5Agg')
+matplotlib.rcParams['text.usetex'] = True
+matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}'] #for \text command
+import addcopyfighandler
 
 class Gaussian():
 	'''
@@ -195,10 +200,10 @@ if __name__=='__main__':
 			# ax.plot(z1[::2, d1], z1[::2, d2], 'r--', alpha=0.3)
 			# ax.plot(z2[::2, d1], z2[::2, d2], 'b--', alpha=0.3)
 			ax.scatter(z1[::20,0], z1[::20,1], z1[::20,2], color='r', marker='o', s=50, alpha=0.15)
-			ax.scatter(z2[::20,0], z2[::20,1], z2[::20,2], color='b', marker='*', s=50, alpha=0.15)
-		pbd.plot_gmm3d(ax, hsmm[i].mu[:, :3], hsmm[i].sigma[:, :3, :3], color='red', alpha=0.3)
+			ax.scatter(z2[::20,0], z2[::20,1], z2[::20,2], color='b', marker='+', s=50, alpha=0.15)
+		pbd.plot_gmm3d(ax, hsmm[i].mu[:, :3], hsmm[i].sigma[:, :3, :3], color='red', alpha=0.7)
 		# if model.window_size ==1:
-		pbd.plot_gmm3d(ax, hsmm[i].mu[:, z_dim:z_dim+3], hsmm[i].sigma[:, z_dim:z_dim+3, z_dim:z_dim+3], color='blue', alpha=0.3)
+		pbd.plot_gmm3d(ax, hsmm[i].mu[:, z_dim:z_dim+3], hsmm[i].sigma[:, z_dim:z_dim+3, z_dim:z_dim+3], color='blue', alpha=0.7)
 		# else:
 		# 	pbd.plot_gmm(hsmm[i].mu, hsmm[i].sigma, dim=[z_dim, z_dim+1], color=[0, 0, 1], alpha=0.3)
 		# ax.set_title(actions[i],fontweight='bold',fontsize=35)
@@ -209,5 +214,16 @@ if __name__=='__main__':
 		plt.axis('off')
 		plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
 	# np.savez_compressed('latent_actions.npz',axs = axs, fig=fig)
+		plt.show()
+
+		# plt.title(r'Transition Probabilities $\a_{i,j}$',fontweight='bold')
+		# plt.xlabel('Class i',fontweight='bold')
+		# plt.xlabel('Class j',fontweight='bold')
+		plt.imshow(np.log(hsmm[i].Trans+1e-10), interpolation='nearest', vmin=-5, cmap='viridis')
+		plt.tight_layout()
+		plt.show()
+		print(hsmm[i].Pd.shape)
+		plt.imshow(np.log(hsmm[i].Pd[:,:50]+1e-10), interpolation='nearest', vmin=-5, cmap='viridis')
+		plt.tight_layout()
 		plt.show()
 	# plt.savefig('latent_actions.pdf')
