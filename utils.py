@@ -5,7 +5,7 @@ from matplotlib.cm import get_cmap
 
 # from tf.transformations import *
 
-import networks
+# import networks
 colors_10 = get_cmap('tab10')
 
 def MMD(x, y, reduction='mean'):
@@ -478,10 +478,17 @@ def batchIsPD(B):
 	except:
 		return False
 
-joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
-# joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
-# joints = ['neck', 'right_shoulder', 'right_elbow', 'right_hand']
+# joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
+# # joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
+# # joints = ['neck', 'right_shoulder', 'right_elbow', 'right_hand']
+# joints_dic = {joints[i]:i for i in range(len(joints))}
+
+
+# joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
+joints = ["waist", "torso", "neck", "head", "left_shoulder", "right_shoulder", "right_elbow", "right_wrist"]
+joints_in = ['neck', 'right_shoulder', 'right_elbow', 'right_wrist']
 joints_dic = {joints[i]:i for i in range(len(joints))}
+
 
 
 def angle(a,b):
