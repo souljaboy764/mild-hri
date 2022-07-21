@@ -31,7 +31,7 @@ if __name__=='__main__':
 	# vae_config.window_size=40
 	vae_config = config.nuitrack.ae_config()
 	vae_config.latent_dim = 5
-	# vae_config.window_size = 5
+	vae_config.window_size = 5
 
 
 	# vae_config.latent_dim = saved_args.latent_dim
@@ -49,7 +49,7 @@ if __name__=='__main__':
 	model.eval()
 	print("Reading Data")
 	# if model.window_size ==1:
-	# 	train_dataset = dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=True)
+	# 	train_dataset = getattr(dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=True)
 	# 	dataset = getattr(dataloaders, saved_args.dataset).SequenceDataset(saved_args.src, train=False)
 	# else:
 	# 	train_dataset = getattr(dataloaders, saved_args.dataset).SequenceWindowDataset(saved_args.src, train=True, window_length=model.window_size)
@@ -112,8 +112,8 @@ if __name__=='__main__':
 			hsmm[a].em(z_encoded)
 	print('Results Folder:',RESULTS_FOLDER)
 	print("Starting")
-	actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
-	reconstruction_error, gt_data, gen_data, lens,times = [], [], [], [], []
+	# actions = ['Waving', 'Handshaking', 'Rocket Fistbump', 'Parachute Fistbump']
+	reconstruction_error, gt_data, gen_data, lens,times, alphas, z_data = [], [], [], [], [], [], []
 	for i in range(NUM_ACTIONS):
 		s = dataset.actidx[i]
 		for j in range(s[0], s[1]):
@@ -136,11 +136,15 @@ if __name__=='__main__':
 			z1 = model(x[:, :dims//2], encode_only=True)
 			if model.window_size == 1:
 				z1_vel = torch.diff(z1, prepend=z1[0:1], dim=0)
-				z2, _ = hsmm[i].condition(torch.concat([z1, z1_vel],dim=-1).detach().cpu().numpy(), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim))
+				h, z2, _ = hsmm[i].condition(torch.concat([z1, z1_vel],dim=-1).detach().cpu().numpy(), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim))
 			else:
 				z2, _ = hsmm[i].condition(z1.detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				h, _, _ = hsmm[i].condition(z1.detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), return_gmm=True)
 			if np.any(np.isnan(z2)):
 				print('z2 nan',actions[i],nb_states,os.path.basename(args.ckpt))
+			print(z1.shape, z2.shape, h.shape)
+			z_data.append(np.concatenate([z1.detach().cpu().numpy(),z2],axis=-1))
+			alphas.append(h.T)
 			x2_gen = model._output(model._decoder(torch.Tensor(z2).to(device)))
 			if torch.any(torch.isnan(x2_gen)):
 				print('x2_gen nan',actions[i],nb_states,os.path.basename(args.ckpt))
@@ -162,11 +166,13 @@ if __name__=='__main__':
 	reconstruction_error = np.concatenate(reconstruction_error,axis=0)
 	gen_data = np.concatenate(gen_data,axis=0)
 	gt_data = np.concatenate(gt_data,axis=0)
+	z_data = np.concatenate(z_data,axis=0)
+	alphas = np.concatenate(alphas,axis=0)
 	print(gt_data.shape, gen_data.shape)
 	reconstruction_error = reconstruction_error.reshape((-1,model.window_size,model.num_joints,3)).sum(-1).mean(-1)#.mean(-1)
 	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'recon_error_hsmm.npz'), error=reconstruction_error)
 	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'hsmm.npz'), hsmm=hsmm)
-	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions.npz'), x_gt=gt_data, x2_gen=gen_data,lens=lens)
+	np.savez_compressed(os.path.join(RESULTS_FOLDER, 'predictions.npz'), x_gt=gt_data, x2_gen=gen_data,lens=lens, alphas=alphas, z_data=z_data)
 	
 	print(np.mean(times))
 	# fig = plt.figure()
