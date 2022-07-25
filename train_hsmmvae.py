@@ -115,7 +115,7 @@ if __name__=='__main__':
 	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'nuitrack', 'shakefive'],
 						help='Dataset to use: buetepage, hhoi or shakefive (default: buetepage).')
 	args = parser.parse_args()
-	torch.manual_seed(128542)
+	# torch.manual_seed(128542)
 	torch.autograd.set_detect_anomaly(True)
 
 	global_config = getattr(config, args.dataset).global_config()
