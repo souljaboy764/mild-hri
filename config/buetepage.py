@@ -2,18 +2,17 @@ class global_config:
 	def __init__(self):
 		self.NUM_JOINTS = 4
 		self.JOINTS_DIM = 3
-		self.WINDOW_LEN = 1
+		self.WINDOW_LEN = 40
 		self.ROBOT_JOINTS = 7
 		self.NUM_ACTIONS = 4
 		self.optimizer = 'AdamW'
 		self.lr = 1e-4
-		self.EPOCHS = 2000
+		self.EPOCHS = 50
 		self.EPOCHS_TO_SAVE = 5
 
 class ae_config:
 	def __init__(self):
 		config = global_config()
-		self.batch_size = 32
 		self.num_joints = config.NUM_JOINTS
 		self.joint_dims = config.JOINTS_DIM
 		self.window_size = config.WINDOW_LEN
@@ -27,7 +26,6 @@ class ae_config:
 class robot_vae_config:
 	def __init__(self):
 		config = global_config()
-		self.batch_size = 32
 		self.num_joints = config.ROBOT_JOINTS
 		self.joint_dims = 1
 		self.window_size = config.WINDOW_LEN

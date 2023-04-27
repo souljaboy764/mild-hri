@@ -124,7 +124,7 @@ def preproc(src_dir, downsample_len=250, augment=False):
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description='Data preprocessing for Right arm trajectories of Buetepage et al. (2020).')
-	parser.add_argument('--src-dir', type=str, default='/home/vignesh/playground/human_robot_interaction_data', metavar='SRC',
+	parser.add_argument('--src-dir', type=str, default='~/playground/human_robot_interaction_data', metavar='SRC',
 						help='Path where https://github.com/souljaboy764/human_robot_interaction_data is extracted to read csv files (default: ./human_robot_interaction_data).')
 	parser.add_argument('--dst-dir', type=str, default='./data/buetepage/', metavar='DST',
 						help='Path to save the processed trajectories to (default: ./data/buetepage/).')
