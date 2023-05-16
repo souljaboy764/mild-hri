@@ -6,6 +6,8 @@ from torch.distributions import Normal, MultivariateNormal, kl_divergence
 from networks import AE
 from utils import *
 
+_eps = 1e-8
+
 class VAE(AE):
 	def __init__(self, **kwargs):
 		super(VAE, self).__init__(**kwargs)
@@ -18,10 +20,7 @@ class VAE(AE):
 		z_mean = self.post_mean(enc)
 		if encode_only:
 			return z_mean
-		# z_std = self.post_logstd(enc).exp()
-		# zpost_dist = Normal(z_mean, z_std)
-		z_std = self.post_logstd(enc).exp() + 1e-3
-		# zpost_dist = MultivariateNormal(z_mean, z_std)
+		z_std = self.post_logstd(enc).exp() + _eps
 			
 		if self.training:
 			eps = torch.randn((10,)+z_mean.shape).to(z_mean.device)
@@ -41,8 +40,6 @@ class FullCovVAE(VAE):
 	def __init__(self, **kwargs):
 		super(FullCovVAE, self).__init__(**kwargs)
 		
-		# # Not mentioned in the paper what is used to ensure stddev>0, using softplus for now
-		# # self.post_std = nn.Sequential(nn.Linear(self.enc_sizes[-1], self.latent_dim), nn.Softplus())
 		self.post_cholesky = nn.Linear(self.enc_sizes[-1], (self.latent_dim*(self.latent_dim+1))//2)
 		self.z_prior = Normal(self.z_prior_mean, self.z_prior_std)
 		self.diag_idx = torch.arange(self.latent_dim)
@@ -60,7 +57,7 @@ class FullCovVAE(VAE):
 		z_std = self.post_cholesky(enc)
 		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim)).to(z_std.device)
 		z_chol[..., self.tril_indices[0], self.tril_indices[1]] = z_std
-		z_chol[..., self.diag_idx,self.diag_idx] = 2*torch.abs(z_chol[..., self.diag_idx,self.diag_idx]) + 1e-2
+		z_chol[..., self.diag_idx,self.diag_idx] = 2*torch.abs(z_chol[..., self.diag_idx,self.diag_idx]) + _eps
 		zpost_dist = MultivariateNormal(z_mean, scale_tril=z_chol)
 			
 		if self.training:

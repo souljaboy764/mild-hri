@@ -7,7 +7,7 @@ class global_config:
 		self.NUM_ACTIONS = 4
 		self.optimizer = 'AdamW'
 		self.lr = 1e-4
-		self.EPOCHS = 50
+		self.EPOCHS = 100
 		self.EPOCHS_TO_SAVE = 5
 
 class ae_config:
