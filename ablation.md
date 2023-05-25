@@ -1,62 +1,44 @@
 # VAE Ablation Results
 
 Averaged over 5 trials
-MSE - Euclidean distance between predicted and ground truth arm locations summed over joints, mean over window \& trajectory
 
-<!-- $\frac{\sum_{i=1}^{|\mathcal{D}|} \sum_{t=1}^{T_i} \sum_{j=1}^{4} ||\hat{x}[t,j] - x[t,j]}{\sum_{i=1}^{|\mathcal{D}|} T_i}$ -->
+MSE - Squared Euclidean distance between predicted and ground truth arm locations summed over 4 joints and over the time window $\mathcal{W}$ \& averaged over all trajectories
 
-## $\Sigma_{VAE} + \Sigma_{HSMM}$
+(average over time window is the current MSE divided by window length)
 
-### Window Mean
+# $x \in \mathcal{R}^{\mathcal{W} \times4\times3}$
+# MSE = $\frac{\sum_{i=1}^{|\mathcal{D}|} \sum_{t=1}^{T_i} \sum_{w=1}^{\mathcal{W}} \sum_{j=1}^{4} ||\hat{\mathbf{x}}[t,w,j] - \mathbf{x}[t,w,j]||^2}{\sum_{i=1}^{|\mathcal{D}|} T_i}$
 
-| Model | Z Dim | MSE |
-|:-----:|:-----:|:----:|
-| vae | 3 | 2.0810e-02 ± 3.1458e-02 |
-| mild | 3 | 2.1523e-02 ± 3.5733e-02 |
-| vae | 5 | 1.7719e-02 ± 2.4877e-02 |
-| mild | 5 | 1.9157e-02 ± 2.6650e-02 |
-| vae | 8 | 1.7371e-02 ± 2.4212e-02 |
-| mild | 8 | 1.6777e-02 ± 2.4033e-02 |
-| vae | 10 | 1.7098e-02 ± 2.3546e-02 |
-| mild | 10 | 1.6424e-02 ± 2.4002e-02 |
-
-### Window Sum
+<!-- ## $\Sigma_{VAE} + \Sigma_{HSMM}$ -->
 
 | Model | Z Dim | MSE |
 |:-----:|:-----:|:----:|
-| vae | 3 | 8.3238e-01 ± 1.2583e+00 |
-| mild | 3 | 8.6093e-01 ± 1.4293e+00 |
-| vae | 5 | 7.0876e-01 ± 9.9508e-01 |
-| mild | 5 | 7.6629e-01 ± 1.0660e+00 |
-| vae | 8 | 6.9484e-01 ± 9.6848e-01 |
-| mild | 8 | 6.7108e-01 ± 9.6133e-01 |
-| vae | 10 | 6.8391e-01 ± 9.4185e-01 |
-| mild | 10 | 6.5695e-01 ± 9.6006e-01 |
+| vae | 3 | 8.323e-01 ± 1.258e+00 |
+| mild | 3 | 8.609e-01 ± 1.429e+00 |
+| mild (cond. KL) | 3 | 8.853e-01 ± 1.448e+00 |
+| vae | 5 | 7.087e-01 ± 9.950e-01 |
+| mild | 5 | 7.662e-01 ± 1.066e+00 |
+| mild (cond. KL) | 5 | 7.234e-01 ± 1.058e+00 |
+| vae | 8 | 6.948e-01 ± 9.684e-01 |
+| mild | 8 | 6.710e-01 ± 9.613e-01 |
+| mild (cond. KL) | 8 | __6.527e-01 ± 9.233e-01__ |
+| vae | 10 | 6.839e-01 ± 9.418e-01 |
+| mild | 10 | 6.569e-01 ± 9.600e-01 |
+| mild (cond. KL) | 10 | 6.717e-01 ± 9.450e-01 |
 
-## $\Sigma_{HSMM}$
-
-### Window Mean
-
-| Model | Z Dim | MSE |
-|:-----:|:-----:|:----:|
-| vae | 3 | 2.0810e-02 ± 3.1459e-02 |
-| mild | 3 | 2.1536e-02 ± 3.5740e-02 |
-| vae | 5 | 1.7720e-02 ± 2.4878e-02 |
-| mild | 5 | 1.9181e-02 ± 2.6674e-02 |
-| vae | 8 | 1.7380e-02 ± 2.4240e-02 |
-| mild | 8 | 1.6856e-02 ± 2.4161e-02 |
-| vae | 10 | 1.7111e-02 ± 2.3591e-02 |
-| mild | 10 | 1.6562e-02 ± 2.4134e-02 |
-
-### Window Sum
+<!-- ## $\Sigma_{HSMM}$
 
 | Model | Z Dim | MSE |
 |:-----:|:-----:|:----:|
-| vae | 3 | 8.3241e-01 ± 1.2584e+00 |
-| mild | 3 | 8.6145e-01 ± 1.4296e+00 |
-| vae | 5 | 7.0881e-01 ± 9.9514e-01 |
-| mild | 5 | 7.6722e-01 ± 1.0670e+00 |
-| vae | 8 | 6.9520e-01 ± 9.6960e-01 |
-| mild | 8 | 6.7423e-01 ± 9.6643e-01 |
-| vae | 10 | 6.8444e-01 ± 9.4364e-01 |
-| mild | 10 | 6.6250e-01 ± 9.6536e-01 |
+| vae | 3 | 8.324e-01 ± 1.258e+00 |
+| mild | 3 | 8.614e-01 ± 1.429e+00 |
+| mild (cond. KL) | 3 | 8.860e-01 ± 1.449e+00 |
+| vae | 5 | 7.088e-01 ± 9.951e-01 |
+| mild | 5 | 7.672e-01 ± 1.067e+00 |
+| mild (cond. KL) | 5 | 7.247e-01 ± 1.059e+00 |
+| vae | 8 | 6.952e-01 ± 9.696e-01 |
+| mild | 8 | 6.742e-01 ± 9.664e-01 |
+| mild (cond. KL) | 8 | __6.577e-01 ± 9.262e-01__ |
+| vae | 10 | 6.844e-01 ± 9.436e-01 |
+| mild | 10 | 6.625e-01 ± 9.653e-01 |
+| mild (cond. KL) | 10 | 6.812e-01 ± 9.551e-01 | -->

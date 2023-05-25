@@ -56,22 +56,26 @@ def run_iteration(iterator, hsmm, model, optimizer):
 			z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
 			z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
 		
-		if not model.training:
+		# if not model.training:
 			# z2_cond, _ = hsmm[label].condition(zpost_samples[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-			x2_gen = model._output(model._decoder(torch.Tensor(z2_cond).to(device)))
-			x1_gen = x_gen[0]
-			x_gen = torch.concat([x1_gen[None], x2_gen[None]])
+			# x2_gen = model._output(model._decoder(torch.Tensor(z2_cond).to(device)))
+			# x1_gen = x_gen[0]
+			# x_gen = torch.concat([x1_gen[None], x2_gen[None]])
 		
 		# Cross training (z1|z2) and (z2|z1)
-		if isinstance(model, networks.VAE):
+		# if isinstance(model, networks.VAE):
 			with torch.no_grad():
 				mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
 				Sigma_prior_cond = torch.Tensor(np.array([sigma_z1_cond, sigma_z2_cond])).to(device) + I
 				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond)
 			
 			# reg_loss += torch.linalg.norm(zpost_dist.mean - mu_prior_cond).mean()
+	
+			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior_cond).sum()
 
-			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior_cond).mean(-1).sum()
+			x_gen_cond = model._output(model._decoder(mu_prior_cond))
+			# x1_gen = x_gen[0]
+			# x_gen = torch.concat([x1_gen[None], x2_gen[None]])
 			
 			# zpost_cov = torch.vstack([zpost_dist.covariance_matrix[0], zpost_dist.covariance_matrix[1]])
 			# mu_diff = torch.vstack([zpost_dist.mean[0], zpost_dist.mean[1]]) - mu_prior_cond
@@ -105,6 +109,8 @@ def run_iteration(iterator, hsmm, model, optimizer):
 			recon_loss = F.mse_loss(x[None].repeat(11,1,1,1), x_gen, reduction='sum')
 		else:
 			recon_loss = F.mse_loss(x, x_gen, reduction='sum')
+
+		recon_loss += F.mse_loss(x, x_gen_cond, reduction='sum')
 		
 		loss = recon_loss + model.beta*reg_loss
 
@@ -191,8 +197,7 @@ if __name__=='__main__':
 	nb_states = args.hsmm_components
 	for i in range(NUM_ACTIONS):
 		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
-		hsmm[-1].mu = np.zeros((nb_states, nb_dim))
-		hsmm[-1].sigma = np.eye(nb_dim)[None].repeat(nb_states,0)
+		hsmm[-1].init_zeros()
 		hsmm[-1].Mu_Pd = np.zeros(nb_states)
 		hsmm[-1].Sigma_Pd = np.ones(nb_states)
 		hsmm[-1].Trans_Pd = np.ones((nb_states, nb_states))/nb_states
