@@ -23,7 +23,7 @@ class VAE(AE):
 		z_std = self.post_logstd(enc).exp() + _eps
 			
 		if self.training:
-			eps = torch.randn((10,)+z_mean.shape).to(z_mean.device)
+			eps = torch.randn((self.mce_samples,)+z_mean.shape, device=z_mean.device)
 			zpost_samples = z_mean + eps*z_std
 			zpost_samples = torch.concat([zpost_samples, z_mean[None]], dim=0)
 		else:
@@ -55,13 +55,13 @@ class FullCovVAE(VAE):
 		# Dorta et al. "Structured Uncertainty Prediction Networks" CVPR'18
 		# Dorta et al. "Training VAEs Under Structured Residuals" 2018
 		z_std = self.post_cholesky(enc)
-		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim)).to(z_std.device)
+		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim), device=z_std.device)
 		z_chol[..., self.tril_indices[0], self.tril_indices[1]] = z_std
 		z_chol[..., self.diag_idx,self.diag_idx] = 2*torch.abs(z_chol[..., self.diag_idx,self.diag_idx]) + _eps
 		zpost_dist = MultivariateNormal(z_mean, scale_tril=z_chol)
 			
 		if self.training:
-			zpost_samples = torch.concat([zpost_dist.rsample((10,)), z_mean[None]], dim=0)
+			zpost_samples = torch.concat([zpost_dist.rsample((self.mce_samples,)), z_mean[None]], dim=0)
 		else:
 			zpost_samples = z_mean
 		

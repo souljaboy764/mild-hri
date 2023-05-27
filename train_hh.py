@@ -45,7 +45,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 			seq_alpha = alpha_hsmm.argmax(0)
 
 		x_gen, zpost_samples, zpost_dist = model(x)
-			
+
 		reg_loss = 0.
 		if isinstance(model, networks.VAE):
 			z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
@@ -106,7 +106,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 			# reg_loss += 0.5*kld_cond2.mean()
 		
 		if model.training and isinstance(model, networks.VAE):
-			recon_loss = F.mse_loss(x[None].repeat(11,1,1,1), x_gen, reduction='sum')
+			recon_loss = F.mse_loss(x[None].repeat(model.mce_samples+1,1,1,1), x_gen, reduction='sum')
 		else:
 			recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 
@@ -121,7 +121,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		if model.training:
 			loss.backward()
 			optimizer.step()
-		
+
 	return total_recon, total_reg, total_loss, x_gen, zpost_samples, x, i
 
 if __name__=='__main__':
@@ -136,8 +136,8 @@ if __name__=='__main__':
 						help='Model to use: AE, VAE or WAE (default: VAE).')
 	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'nuitrack'],
 						help='Dataset to use: buetepage, hhoi or shakefive (default: buetepage).')
-	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
-						help='Random seed for training (randomized by default).')
+	parser.add_argument('--seed', type=int, default=1696958483, metavar='SEED',
+						help='Random seed for training (default: 1696958483).')
 	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
 						help='Latent space dimension (default: 5)')
 	args = parser.parse_args()
