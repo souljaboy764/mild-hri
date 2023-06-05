@@ -3,6 +3,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+from Sophia import SophiaG
+
 import numpy as np
 import os, datetime, argparse
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -36,81 +38,50 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		seq_len, dims = x.shape
 		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 		
-		if isinstance(model, networks.VAE) or hsmm!=[]:
-			alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
-			if np.any(np.isnan(alpha_hsmm)):
-				print('Alpha Nan')
-				alpha_hsmm = forward_variable(hsmm[label], n_step=seq_len)
+		# if isinstance(model, networks.VAE) or hsmm!=[]:
+		# 	alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
+		# 	if np.any(np.isnan(alpha_hsmm)):
+		# 		print('Alpha Nan')
+		# 		alpha_hsmm = forward_variable(hsmm[label], n_step=seq_len)
 
-			seq_alpha = alpha_hsmm.argmax(0)
+		# 	seq_alpha = alpha_hsmm.argmax(0)
 
 		x_gen, zpost_samples, zpost_dist = model(x)
 
 		reg_loss = 0.
 		if isinstance(model, networks.VAE):
-			z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
-			kld = torch.distributions.kl_divergence(zpost_dist, z_prior).mean(0)
-			reg_loss += kld.mean()
-
-		if isinstance(model, networks.VAE):
-			z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-			z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-		
-		# if not model.training:
-			# z2_cond, _ = hsmm[label].condition(zpost_samples[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-			# x2_gen = model._output(model._decoder(torch.Tensor(z2_cond).to(device)))
-			# x1_gen = x_gen[0]
-			# x_gen = torch.concat([x1_gen[None], x2_gen[None]])
-		
-		# Cross training (z1|z2) and (z2|z1)
-		# if isinstance(model, networks.VAE):
 			with torch.no_grad():
+				# z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
+				z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				# z1_cond, _ = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				# z2_cond, _ = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
 				mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
 				Sigma_prior_cond = torch.Tensor(np.array([sigma_z1_cond, sigma_z2_cond])).to(device) + I
+
+				# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1], zpost_dist.covariance_matrix[1], dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0], zpost_dist.covariance_matrix[0], dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				# mu_prior_cond = torch.concat([z1_cond[None], z2_cond[None]])
+				# Sigma_prior_cond = torch.concat([sigma_z1_cond[None], sigma_z2_cond[None]]) + I
+				
 				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond)
 			
-			# reg_loss += torch.linalg.norm(zpost_dist.mean - mu_prior_cond).mean()
+			# reg_loss = torch.distributions.kl_divergence(zpost_dist, z_prior).mean() 
+		
+			# Cross training (z1|z2) and (z2|z1) 	
+			reg_loss = torch.distributions.kl_divergence(zpost_dist, z_prior_cond).mean()
+		
+			# reg_loss += F.mse_loss(zpost_dist.mean, mu_prior_cond, reduction='sum')
 	
-			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior_cond).sum()
-
-			x_gen_cond = model._output(model._decoder(mu_prior_cond))
-			# x1_gen = x_gen[0]
-			# x_gen = torch.concat([x1_gen[None], x2_gen[None]])
-			
-			# zpost_cov = torch.vstack([zpost_dist.covariance_matrix[0], zpost_dist.covariance_matrix[1]])
-			# mu_diff = torch.vstack([zpost_dist.mean[0], zpost_dist.mean[1]]) - mu_prior_cond
-			# kld_cond = (inv_Sigma_prior_cond @ zpost_cov).diagonal(offset=0, dim1=-1, dim2=-2).sum(-1)
-			# # kld_cond += (mu_diff[..., None, :] @ (inv_Sigma_prior_cond @ mu_diff[..., None]))[..., 0, 0] # torch.einsum('nli,nli->nl',mu_diff,torch.einsum('nlij,nlj->nli',inv_Sigma_prior_cond,mu_diff))
-			# kld_cond += (mu_diff*torch.matmul(inv_Sigma_prior_cond, mu_diff.unsqueeze(-1)).squeeze(-1)).sum(-1)
-			# kld_cond += - torch.logdet(zpost_cov)
-			# reg_loss += 0.5*kld_cond.mean()
-
-			# with torch.no_grad():
-			# 	inv_Sigma_prior_cond = torch.Tensor(np.linalg.inv(sigma_z1_cond)).to(device)
-			# 	print(torch.any(torch.isnan(inv_Sigma_prior_cond)).cpu().item(), np.any(np.isnan(z1_cond)))
-			# 	z1_cond = torch.Tensor(z1_cond).to(device)
-			# mu_diff = zpost_dist.mean[0] - z1_cond
-			# kld_cond1 = torch.bmm(inv_Sigma_prior_cond, zpost_dist.covariance_matrix[0]).diagonal(offset=0, dim1=-1, dim2=-2).sum(-1)
-			# kld_cond1 += torch.matmul(mu_diff[..., None,:], torch.matmul(inv_Sigma_prior_cond, mu_diff[...,None]))[..., 0, 0] # torch.einsum('nli,nli->nl',mu_diff,torch.einsum('nlij,nlj->nli',inv_Sigma_prior_cond,mu_diff))
-			# kld_cond1 += - torch.logdet(zpost_dist.covariance_matrix[0])
-			# reg_loss += 0.5*kld_cond1.mean()
-
-			# with torch.no_grad():
-			# 	inv_Sigma_prior_cond = torch.Tensor(np.linalg.inv(sigma_z2_cond)).to(device)
-			# 	print(torch.any(torch.isnan(inv_Sigma_prior_cond)).cpu().item(), np.any(np.isnan(z2_cond)))
-			# 	z2_cond = torch.Tensor(z2_cond).to(device)
-			# mu_diff = zpost_dist.mean[1] - z2_cond
-			# kld_cond2 = torch.bmm(inv_Sigma_prior_cond, zpost_dist.covariance_matrix[1]).diagonal(offset=0, dim1=-1, dim2=-2).sum(-1)
-			# kld_cond2 += torch.matmul(mu_diff[..., None,:], torch.matmul(inv_Sigma_prior_cond, mu_diff[...,None]))[..., 0, 0] # torch.einsum('nli,nli->nl',mu_diff,torch.einsum('nlij,nlj->nli',inv_Sigma_prior_cond,mu_diff))
-			# kld_cond2 += - torch.logdet(zpost_dist.covariance_matrix[1])
-			# reg_loss += 0.5*kld_cond2.mean()
+		if not model.training:
+			x_gen = model._output(model._decoder(mu_prior_cond))
 		
 		if model.training and isinstance(model, networks.VAE):
 			recon_loss = F.mse_loss(x[None].repeat(model.mce_samples+1,1,1,1), x_gen, reduction='sum')
 		else:
 			recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 
-		recon_loss += F.mse_loss(x, x_gen_cond, reduction='sum')
+		# recon_loss += F.mse_loss(x, x_gen_cond, reduction='sum')
 		
 		loss = recon_loss + model.beta*reg_loss
 
@@ -132,14 +103,14 @@ if __name__=='__main__':
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
 	parser.add_argument('--hsmm-components', type=int, default=10, metavar='N_COMPONENTS', 
 						help='Number of components to use in HSMM Prior (default: 10).')
-	parser.add_argument('--model', type=str, default='AE', metavar='ARCH', choices=['AE', 'VAE', 'WAE', 'FullCovVAE'],
+	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'WAE', 'FullCovVAE'],
 						help='Model to use: AE, VAE or WAE (default: VAE).')
 	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'nuitrack'],
 						help='Dataset to use: buetepage, hhoi or shakefive (default: buetepage).')
-	parser.add_argument('--seed', type=int, default=1696958483, metavar='SEED',
-						help='Random seed for training (default: 1696958483).')
-	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
-						help='Latent space dimension (default: 5)')
+	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
+						help='Random seed for training (randomized by default).')
+	parser.add_argument('--latent-dim', type=int, default=3, metavar='Z',
+						help='Latent space dimension (default: 3)')
 	args = parser.parse_args()
 	print('Random Seed',args.seed)
 	torch.manual_seed(args.seed)
@@ -158,7 +129,8 @@ if __name__=='__main__':
 	print("Creating Model and Optimizer")
 
 	model = getattr(networks, args.model)(**(ae_config.__dict__)).to(device)
-	optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
+	# optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
+	optimizer = SophiaG(model.parameters(), lr=global_config.lr, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
 	
 	print("Reading Data")
 	dataset = getattr(dataloaders, args.dataset)
@@ -198,6 +170,7 @@ if __name__=='__main__':
 	for i in range(NUM_ACTIONS):
 		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
 		hsmm[-1].init_zeros()
+		hsmm[-1].init_priors = np.ones(nb_states) / nb_states
 		hsmm[-1].Mu_Pd = np.zeros(nb_states)
 		hsmm[-1].Sigma_Pd = np.ones(nb_states)
 		hsmm[-1].Trans_Pd = np.ones((nb_states, nb_states))/nb_states
