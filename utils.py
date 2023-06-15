@@ -3,6 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 
+import torch
+import torch.nn.functional as F
+from torch.nn.functional import grid_sample, affine_grid
+
 from transformations import *
 
 colors_10 = get_cmap('tab10')
@@ -166,62 +170,64 @@ def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_don
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
 	
-	# writer.add_embedding(zx_samples[:100],global_step=steps_done, tag=prefix+'/q(z|x)')
-	if model.training and len(x_gen.shape)==4:
-		x_gen = x_gen[-1]
-	_, seq_len, dims = x_gen.shape
-	x_gen = x_gen.detach().cpu().numpy()
-	x = x.detach().cpu().numpy()
+	# # writer.add_embedding(zx_samples[:100],global_step=steps_done, tag=prefix+'/q(z|x)')
+	# if model.training and len(x_gen.shape)==4:
+	# 	x_gen = x_gen[-1]
+	# _, seq_len, dims = x_gen.shape
+	# x_gen = x_gen.detach().cpu().numpy()
+	# x = x.detach().cpu().numpy()
 	
-	if model.window_size>1:
-		x = x.reshape(2,-1,model.window_size,model.num_joints,3)
-		x_gen = x_gen.reshape(2,-1,model.window_size,model.num_joints,3)
-		fig, ax = plt.subplots(nrows=5, ncols=model.num_joints, figsize=(28, 16), sharex=True)
-		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+	# if model.window_size>1:
+	# 	x = x.reshape(2,-1,model.window_size,model.num_joints,3)
+	# 	x_gen = x_gen.reshape(2,-1,model.window_size,model.num_joints,3)
+	# 	fig, ax = plt.subplots(nrows=5, ncols=model.num_joints, figsize=(28, 16), sharex=True)
+	# 	fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
-		plt.subplots_adjust(
-			left=0.05,  # the left side of the subplots of the figure
-			right=0.95,  # the right side of the subplots of the figure
-			bottom=0.05,  # the bottom of the subplots of the figure
-			top=0.95,  # the top of the subplots of the figure
-			wspace=0.05,  # the amount of width reserved for blank space between subplots
-			hspace=0.05,  # the amount of height reserved for white space between subplots
-		)
-		for i in range(5):
-			idx = np.random.randint(0, seq_len)
-			for j in range(model.num_joints):
-				ax[i][j].set(xlim=(0, model.window_size - 1))
-				color_counter = 0
-				for dim in range(model.joint_dims):
-					ax[i][j].plot(x[0, idx, :, j, dim], color=colors_10(color_counter%10))
-					ax[i][j].plot(x_gen[0, idx, :, j, dim], linestyle='--', color=colors_10(color_counter % 10))
-					ax[i][j].plot(x[1, idx, :, j, dim], color=colors_10(color_counter%10))
-					ax[i][j].plot(x_gen[1, idx, :, j, dim], linestyle='-.', color=colors_10(color_counter % 10))
-					color_counter += 1
-	else:
-		fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True)
-		fig.tight_layout(pad=0, h_pad=0, w_pad=0)
+	# 	plt.subplots_adjust(
+	# 		left=0.05,  # the left side of the subplots of the figure
+	# 		right=0.95,  # the right side of the subplots of the figure
+	# 		bottom=0.05,  # the bottom of the subplots of the figure
+	# 		top=0.95,  # the top of the subplots of the figure
+	# 		wspace=0.05,  # the amount of width reserved for blank space between subplots
+	# 		hspace=0.05,  # the amount of height reserved for white space between subplots
+	# 	)
+	# 	for i in range(5):
+	# 		idx = np.random.randint(0, seq_len)
+	# 		# for j in range(model.num_joints):
+	# 		if True:
+	# 			j=0
+	# 			ax[i].set(xlim=(0, model.window_size - 1))
+	# 			color_counter = 0
+	# 			for dim in range(model.joint_dims):
+	# 				ax[i].plot(x[0, idx, :, j, dim], color=colors_10(color_counter%10))
+	# 				ax[i].plot(x_gen[0, idx, :, j, dim], linestyle='--', color=colors_10(color_counter % 10))
+	# 				ax[i].plot(x[1, idx, :, j, dim], color=colors_10(color_counter%10))
+	# 				ax[i].plot(x_gen[1, idx, :, j, dim], linestyle='-.', color=colors_10(color_counter % 10))
+	# 				color_counter += 1
+	# else:
+	# 	fig, ax = plt.subplots(nrows=model.num_joints, ncols=2, figsize=(28, 16), sharex=True)
+	# 	fig.tight_layout(pad=0, h_pad=0, w_pad=0)
 
-		plt.subplots_adjust(
-			left=0.05,  # the left side of the subplots of the figure
-			right=0.95,  # the right side of the subplots of the figure
-			bottom=0.05,  # the bottom of the subplots of the figure
-			top=0.95,  # the top of the subplots of the figure
-			wspace=0.05,  # the amount of width reserved for blank space between subplots
-			hspace=0.05,  # the amount of height reserved for white space between subplots
-		)
-		for i in range(model.num_joints):
-			for j in range(2):
-				ax[i][j].set(xlim=(0, seq_len - 1))
-				color_counter = 0
-				for dim in range(3):
-					ax[i][j].plot(x[j, :, i*3+dim], color=colors_10(color_counter%10))
-					ax[i][j].plot(x_gen[j, :, i*3+dim], linestyle='--', color=colors_10(color_counter % 10))
-					color_counter += 1
+	# 	plt.subplots_adjust(
+	# 		left=0.05,  # the left side of the subplots of the figure
+	# 		right=0.95,  # the right side of the subplots of the figure
+	# 		bottom=0.05,  # the bottom of the subplots of the figure
+	# 		top=0.95,  # the top of the subplots of the figure
+	# 		wspace=0.05,  # the amount of width reserved for blank space between subplots
+	# 		hspace=0.05,  # the amount of height reserved for white space between subplots
+	# 	)
+	# 	for i in range(model.num_joints):
+	# 		for j in range(2):
+	# 			ax[i][j].set(xlim=(0, seq_len - 1))
+	# 			color_counter = 0
+	# 			for dim in range(3):
+	# 				ax[i][j].plot(x[j, :, i*3+dim], color=colors_10(color_counter%10))
+	# 				ax[i][j].plot(x_gen[j, :, i*3+dim], linestyle='--', color=colors_10(color_counter % 10))
+	# 				color_counter += 1
 
-	fig.canvas.draw()
-	writer.add_figure(prefix+'/sample reconstruction', fig, steps_done)
-	plt.close(fig)
+	# fig.canvas.draw()
+	# writer.add_figure(prefix+'/sample reconstruction', fig, steps_done)
+	# plt.close(fig)
 
 def write_summaries_hr(writer, recon, kl, loss, x_gen, zr_samples, x, steps_done, prefix, model):
 	writer.add_scalar(prefix+'/loss', sum(loss), steps_done)
@@ -608,8 +614,27 @@ def reset_axis(ax, variant = None, action = None, frame_idx = None):
 def visualize_skeleton(ax, trajectory, **kwargs):
 	# trajectory shape: W, J, D (window size x num joints x joint dims)
 	# Assuming that num joints = 4 and dims = 3
-	assert len(trajectory.shape) ==  3 and trajectory.shape[1] == 4 and trajectory.shape[2] == 3
+	# assert len(trajectory.shape) ==  3 #and trajectory.shape[1] == 4 and trajectory.shape[2] == 3
 	for w in range(trajectory.shape[0]):
 		ax.plot(trajectory[w, :, 0], trajectory[w, :, 1], trajectory[w, :, 2], color='k', marker='o', **kwargs)
 	
 	return ax
+
+
+
+def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+	# train_data shape: seq_len, J, D : J - num joints, D - dimensions
+	num_trajs = len(train_data)
+	seq_len, J, D  = train_data[0].shape
+	theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device).repeat(J,1,1)
+	for i in range(num_trajs):
+		seq_len, J, D = train_data[i].shape
+		train_data[i] = train_data[i].transpose(1,2,0) # J, D, seq_len
+		train_data[i] = torch.Tensor(train_data[i]).to(device).unsqueeze(2) # J, D, 1, seq_len
+		train_data[i] = torch.concat([train_data[i], torch.zeros_like(train_data[i])], dim=2) # J, D, 2 seq_len
+		
+		grid = affine_grid(theta, torch.Size([J, D, 2, downsample_len]), align_corners=True)
+		train_data[i] = grid_sample(train_data[i].type(torch.float32), grid, align_corners=True) # J, D, 2 downsample_len
+		train_data[i] = train_data[i][:, :, 0].cpu().detach().numpy() # J, D, downsample_len
+		train_data[i] = train_data[i].transpose(2,0,1) # downsample_len, J, D
+	return np.array(train_data)
