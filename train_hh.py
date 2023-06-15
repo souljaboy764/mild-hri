@@ -21,11 +21,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def run_iteration(iterator, hsmm, model, optimizer):
 	total_recon, total_reg, total_loss, mu_prior, Sigma_prior = [], [], [], [], []
 	z_dim = model.latent_dim
-	I = torch.eye(z_dim, device=device)*1e-8
-	if isinstance(model, networks.VAE) or hsmm!=[]:
-		for label in range(len(hsmm)):
-			mu_prior.append(torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,z_dim:]]).to(device))
-			Sigma_prior.append(torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, z_dim:, z_dim:]]).to(device))
+	I = torch.eye(z_dim, device=device)*1e-6
+	# if isinstance(model, networks.VAE) or hsmm!=[]:
+	# 	for label in range(len(hsmm)):
+	# 		mu_prior.append(torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,z_dim:]]).to(device))
+	# 		Sigma_prior.append(torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, z_dim:, z_dim:]]).to(device) + I)
 		
 	for i, x in enumerate(iterator):
 		if model.training:
@@ -52,10 +52,11 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		if isinstance(model, networks.VAE):
 			with torch.no_grad():
 				# z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
+
 				z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
 				z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				# z1_cond, _ = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				# z2_cond, _ = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
 				mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
 				Sigma_prior_cond = torch.Tensor(np.array([sigma_z1_cond, sigma_z2_cond])).to(device) + I
 
@@ -64,16 +65,21 @@ def run_iteration(iterator, hsmm, model, optimizer):
 				# mu_prior_cond = torch.concat([z1_cond[None], z2_cond[None]])
 				# Sigma_prior_cond = torch.concat([sigma_z1_cond[None], sigma_z2_cond[None]]) + I
 				
-				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond)
+				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond, validate_args=False)
 			
-			# reg_loss = torch.distributions.kl_divergence(zpost_dist, z_prior).mean() 
+			# reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior).mean()
 		
 			# Cross training (z1|z2) and (z2|z1) 	
-			reg_loss = torch.distributions.kl_divergence(zpost_dist, z_prior_cond).mean()
+			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior_cond).mean()
 		
 			# reg_loss += F.mse_loss(zpost_dist.mean, mu_prior_cond, reduction='sum')
 	
 		if not model.training:
+			# z1_cond, _ = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+			# z2_cond, _ = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+			# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+			# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+			# mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
 			x_gen = model._output(model._decoder(mu_prior_cond))
 		
 		if model.training and isinstance(model, networks.VAE):
@@ -97,8 +103,8 @@ def run_iteration(iterator, hsmm, model, optimizer):
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
-	parser.add_argument('--results', type=str, default='./logs/results/'+datetime.datetime.now().strftime("%m%d%H%M"), metavar='RES',
-						help='Path for saving results (default: ./logs/results/MMDDHHmm).')
+	parser.add_argument('--results', type=str, default='./logs/results/'+datetime.datetime.now().strftime("%m%d%H%M"), 
+						metavar='RES', help='Path for saving results (default: ./logs/results/MMDDHHmm).')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
 	parser.add_argument('--hsmm-components', type=int, default=10, metavar='N_COMPONENTS', 
@@ -111,26 +117,54 @@ if __name__=='__main__':
 						help='Random seed for training (randomized by default).')
 	parser.add_argument('--latent-dim', type=int, default=3, metavar='Z',
 						help='Latent space dimension (default: 3)')
+	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
+						help='Checkpoint to resume training from (default: None)')
 	args = parser.parse_args()
 	print('Random Seed',args.seed)
 	torch.manual_seed(args.seed)
 	np.random.seed(args.seed)
 	torch.autograd.set_detect_anomaly(True)
+	args.dataset = 'bp_hands_downsample'
+	if args.ckpt is None:
+		global_config = getattr(config, args.dataset).global_config()
+		ae_config = getattr(config, args.dataset).ae_config()
+		ae_config.latent_dim = args.latent_dim
 
-	global_config = getattr(config, args.dataset).global_config()
-	ae_config = getattr(config, args.dataset).ae_config()
-	ae_config.latent_dim = args.latent_dim
+		global_step = 0
+		global_epochs = 0
+		ckpt = None
+
+
+	else:
+		dirname = os.path.dirname(args.ckpt)
+		ckpt = torch.load(args.ckpt)
+		hyperparams = np.load(os.path.join(dirname,'hyperparams.npz'), allow_pickle=True)
+		args = hyperparams['args'].item()
+		global_config = hyperparams['global_config'].item()
+		ae_config = hyperparams['ae_config'].item()
+		global_epochs = ckpt['epoch']
 
 	MODELS_FOLDER = os.path.join(args.results, "models")
 	SUMMARIES_FOLDER = os.path.join(args.results, "summary")
-	global_step = 0
-	global_epochs = 0
+	if not os.path.exists(args.results):
+		print("Creating Result Directory")
+		os.makedirs(args.results)
+	if not os.path.exists(MODELS_FOLDER):
+		print("Creating Model Directory")
+		os.makedirs(MODELS_FOLDER)
+	if not os.path.exists(SUMMARIES_FOLDER):
+		print("Creating Model Directory")
+		os.makedirs(SUMMARIES_FOLDER)
+	np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config)
 
 	print("Creating Model and Optimizer")
-
 	model = getattr(networks, args.model)(**(ae_config.__dict__)).to(device)
 	# optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
 	optimizer = SophiaG(model.parameters(), lr=global_config.lr, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
+	
+	if ckpt is not None:
+		model.load_state_dict(ckpt['model'])
+		optimizer.load_state_dict(ckpt['optimizer'])
 	
 	print("Reading Data")
 	dataset = getattr(dataloaders, args.dataset)
@@ -152,16 +186,6 @@ if __name__=='__main__':
 
 	writer.flush()
 
-	if not os.path.exists(args.results):
-		print("Creating Result Directory")
-		os.makedirs(args.results)
-	if not os.path.exists(MODELS_FOLDER):
-		print("Creating Model Directory")
-		os.makedirs(MODELS_FOLDER)
-	if not os.path.exists(SUMMARIES_FOLDER):
-		print("Creating Model Directory")
-		os.makedirs(SUMMARIES_FOLDER)
-	np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config)
 
 	print("Starting Epochs")
 	hsmm = []
@@ -171,6 +195,7 @@ if __name__=='__main__':
 		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
 		hsmm[-1].init_zeros()
 		hsmm[-1].init_priors = np.ones(nb_states) / nb_states
+		hsmm[-1].Trans = np.ones((nb_states, nb_states))/nb_states
 		hsmm[-1].Mu_Pd = np.zeros(nb_states)
 		hsmm[-1].Sigma_Pd = np.ones(nb_states)
 		hsmm[-1].Trans_Pd = np.ones((nb_states, nb_states))/nb_states
@@ -222,4 +247,4 @@ if __name__=='__main__':
 	writer.flush()
 
 	checkpoint_file = os.path.join(MODELS_FOLDER, 'final.pth')
-	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_step, 'hsmm':hsmm}, checkpoint_file)
+	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
