@@ -1,3 +1,4 @@
 import config.bp_hands_downsample
+import config.buetepage_downsampled
 import config.buetepage
 import config.nuitrack

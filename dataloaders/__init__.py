@@ -1,4 +1,5 @@
 import dataloaders.bp_hands_downsample
 import dataloaders.buetepage
+import dataloaders.buetepage_downsampled
 import dataloaders.buetepage_hr
 import dataloaders.nuitrack

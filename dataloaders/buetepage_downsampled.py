@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+from utils import downsample_trajs
 
 # class SkeletonDataset(Dataset):
 # 	def __init__(self, datafile, train=True):
@@ -34,9 +35,7 @@ class SequenceDataset(Dataset):
 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		with np.load(datafile, allow_pickle=True) as data:
 			if train:
-				traj_data = data['train_data']
-				vel_data = [np.diff(traj, axis=0, prepend=traj[0:1]) for traj in traj_data]
-				self.traj_data = [np.hstack([traj_data[i], vel_data[i]]) for i in range(len(traj_data))]
+				self.traj_data = data['train_data']
 				self.labels = data['train_labels']
 				self.actidx = np.array([[0,24],[24,54],[54,110],[110,149]])
 				# self.actidx = np.array([[0,8],[8,16],[16,24],[24,32]]) # Human-robot trajs
@@ -45,7 +44,12 @@ class SequenceDataset(Dataset):
 				self.labels = data['test_labels']
 				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
 				# self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]]) # Human-robot trajs
-			
+			for i in range(len(self.traj_data)):
+				seq_len, numdims = self.traj_data[i].shape
+				traj_1 = self.traj_data[i][:, None, :numdims//2]
+				traj_2 = self.traj_data[i][:, None, numdims//2:]
+				self.traj_data[i] = downsample_trajs([np.concatenate([traj_1, traj_2], axis=-1)], 4*seq_len//10, device)[0, :, 0, :]
+
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
 			for idx in range(len(self.actidx)):
