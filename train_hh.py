@@ -41,7 +41,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		# if isinstance(model, networks.VAE) or hsmm!=[]:
 		# 	alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
 		# 	if np.any(np.isnan(alpha_hsmm)):
-		# 		print('Alpha Nan')
+		# 		print('Alpha Nan', i)
 		# 		alpha_hsmm = forward_variable(hsmm[label], n_step=seq_len)
 
 		# 	seq_alpha = alpha_hsmm.argmax(0)
@@ -55,15 +55,13 @@ def run_iteration(iterator, hsmm, model, optimizer):
 
 				z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
 				z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
 				mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
 				Sigma_prior_cond = torch.Tensor(np.array([sigma_z1_cond, sigma_z2_cond])).to(device) + I
 
-				# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1], zpost_dist.covariance_matrix[1], dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0], zpost_dist.covariance_matrix[0], dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				# mu_prior_cond = torch.concat([z1_cond[None], z2_cond[None]])
-				# Sigma_prior_cond = torch.concat([sigma_z1_cond[None], sigma_z2_cond[None]]) + I
+				# # z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1], zpost_dist.covariance_matrix[1], dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				# # z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0], zpost_dist.covariance_matrix[0], dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				# # mu_prior_cond = torch.concat([z1_cond[None], z2_cond[None]])
+				# # Sigma_prior_cond = torch.concat([sigma_z1_cond[None], sigma_z2_cond[None]]) + I
 				
 				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond, validate_args=False)
 			
@@ -124,7 +122,7 @@ if __name__=='__main__':
 	torch.manual_seed(args.seed)
 	np.random.seed(args.seed)
 	torch.autograd.set_detect_anomaly(True)
-	args.dataset = 'bp_hands_downsample'
+	args.dataset = 'buetepage_downsampled'
 	if args.ckpt is None:
 		global_config = getattr(config, args.dataset).global_config()
 		ae_config = getattr(config, args.dataset).ae_config()
@@ -232,7 +230,7 @@ if __name__=='__main__':
 					zpost_samples = model(x, encode_only=True)
 					z_encoded.append(torch.concat([zpost_samples[0], zpost_samples[1]], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm[a].init_hmm_kbins(z_encoded)
-				hsmm[a].em(z_encoded)
+				hsmm[a].em(z_encoded, nb_max_steps=60)
 			
 			test_recon, test_kl, test_loss, x_gen, zx_samples, x, iters = run_iteration(test_iterator, hsmm, model, optimizer)
 			write_summaries_vae(writer, test_recon, test_kl, test_loss, x_gen, zx_samples, x, steps_done, 'test', model)
