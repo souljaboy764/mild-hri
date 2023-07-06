@@ -165,8 +165,8 @@ def forward_variable_single(hsmm, t_step, n_step):
 	h /= (np.sum(h, axis=0)+1e-8)
 	return h
 
-def write_summaries_vae(writer, recon, kl, loss, x_gen, zx_samples, x, steps_done, prefix, model):
-	writer.add_histogram(prefix+'/loss', sum(loss), steps_done)
+def write_summaries_vae(writer, recon, kl, steps_done, prefix):
+	# writer.add_histogram(prefix+'/loss', sum(loss), steps_done)
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
 	

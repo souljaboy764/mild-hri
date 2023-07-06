@@ -21,12 +21,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def run_iteration(iterator, hsmm, model, optimizer):
 	total_recon, total_reg, total_loss, mu_prior, Sigma_prior = [], [], [], [], []
 	z_dim = model.latent_dim
-	I = torch.eye(z_dim, device=device)*1e-6
-	# if isinstance(model, networks.VAE) or hsmm!=[]:
-	# 	for label in range(len(hsmm)):
-	# 		mu_prior.append(torch.Tensor([hsmm[label].mu[:,:z_dim], hsmm[label].mu[:,z_dim:]]).to(device))
-	# 		Sigma_prior.append(torch.Tensor([hsmm[label].sigma[:, :z_dim, :z_dim], hsmm[label].sigma[:, z_dim:, z_dim:]]).to(device) + I)
-		
+	I = torch.eye(z_dim, device=device)*1e-8
+	if isinstance(model, networks.VAE) and hsmm!=[]:
+		for label in range(len(hsmm)):
+			mu_prior.append(torch.concat([hsmm[label].mu[None,:,:z_dim], hsmm[label].mu[None, :,z_dim:]]).to(device))
+			Sigma_prior.append(torch.concat([hsmm[label].sigma[None, :, :z_dim, :z_dim], hsmm[label].sigma[None, :, z_dim:, z_dim:]]).to(device) + I)
+	
 	for i, x in enumerate(iterator):
 		if model.training:
 			optimizer.zero_grad()
@@ -35,59 +35,25 @@ def run_iteration(iterator, hsmm, model, optimizer):
 		x = x[0]
 		label = label[0]
 		x = torch.Tensor(x).to(device)
-		seq_len, dims = x.shape
-		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
-		
-		# if isinstance(model, networks.VAE) or hsmm!=[]:
-		# 	alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
-		# 	if np.any(np.isnan(alpha_hsmm)):
-		# 		print('Alpha Nan', i)
-		# 		alpha_hsmm = forward_variable(hsmm[label], n_step=seq_len)
-
-		# 	seq_alpha = alpha_hsmm.argmax(0)
-
+		_, seq_len, dims = x.shape
 		x_gen, zpost_samples, zpost_dist = model(x)
 
+		recon_loss = ((x[None] - x_gen)**2).sum()
+		loss = recon_loss 
+
 		reg_loss = 0.
-		if isinstance(model, networks.VAE):
+		if model.beta!=0 and isinstance(model, networks.VAE) and hsmm!=[]:
+			alpha_hsmm, _, _, _, _ = hsmm[label].compute_messages(marginal=[], sample_size=seq_len)
+			if np.any(np.isnan(alpha_hsmm)):
+				print('Alpha Nan', i)
+				alpha_hsmm = forward_variable(hsmm[label], n_step=seq_len)
+
+			seq_alpha = alpha_hsmm.argmax(0)
 			with torch.no_grad():
-				# z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
+				z_prior = torch.distributions.MultivariateNormal(mu_prior[label][:, seq_alpha], Sigma_prior[label][:, seq_alpha])
 
-				z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
-				Sigma_prior_cond = torch.Tensor(np.array([sigma_z1_cond, sigma_z2_cond])).to(device) + I
-
-				# # z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1], zpost_dist.covariance_matrix[1], dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				# # z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0], zpost_dist.covariance_matrix[0], dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				# # mu_prior_cond = torch.concat([z1_cond[None], z2_cond[None]])
-				# # Sigma_prior_cond = torch.concat([sigma_z1_cond[None], sigma_z2_cond[None]]) + I
-				
-				z_prior_cond = torch.distributions.MultivariateNormal(mu_prior_cond, Sigma_prior_cond, validate_args=False)
-			
-			# reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior).mean()
-		
-			# Cross training (z1|z2) and (z2|z1) 	
-			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior_cond).mean()
-		
-			# reg_loss += F.mse_loss(zpost_dist.mean, mu_prior_cond, reduction='sum')
-	
-		if not model.training:
-			# z1_cond, _ = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), zpost_dist.covariance_matrix[1].detach().cpu().numpy(), dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-			# z2_cond, _ = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), zpost_dist.covariance_matrix[0].detach().cpu().numpy(), dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-			# z1_cond, sigma_z1_cond = hsmm[label].condition(zpost_dist.mean[1].detach().cpu().numpy(), None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-			# z2_cond, sigma_z2_cond = hsmm[label].condition(zpost_dist.mean[0].detach().cpu().numpy(), None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-			# mu_prior_cond = torch.Tensor(np.array([z1_cond, z2_cond])).to(device)
-			x_gen = model._output(model._decoder(mu_prior_cond))
-		
-		if model.training and isinstance(model, networks.VAE):
-			recon_loss = F.mse_loss(x[None].repeat(model.mce_samples+1,1,1,1), x_gen, reduction='sum')
-		else:
-			recon_loss = F.mse_loss(x, x_gen, reduction='sum')
-
-		# recon_loss += F.mse_loss(x, x_gen_cond, reduction='sum')
-		
-		loss = recon_loss + model.beta*reg_loss
+			reg_loss += torch.distributions.kl_divergence(zpost_dist, z_prior).mean()
+			loss += model.beta*reg_loss
 
 		total_recon.append(recon_loss)
 		total_reg.append(reg_loss)
@@ -101,7 +67,7 @@ def run_iteration(iterator, hsmm, model, optimizer):
 
 if __name__=='__main__':
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
-	parser.add_argument('--results', type=str, default='./logs/results/'+datetime.datetime.now().strftime("%m%d%H%M"), 
+	parser.add_argument('--results', type=str, default='./logs/2023/debug', 
 						metavar='RES', help='Path for saving results (default: ./logs/results/MMDDHHmm).')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
@@ -157,8 +123,8 @@ if __name__=='__main__':
 
 	print("Creating Model and Optimizer")
 	model = getattr(networks, args.model)(**(ae_config.__dict__)).to(device)
-	# optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
-	optimizer = SophiaG(model.parameters(), lr=global_config.lr, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
+	optimizer = getattr(torch.optim, global_config.optimizer)(model.parameters(), lr=global_config.lr)
+	# optimizer = SophiaG(model.parameters(), lr=global_config.lr, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
 	
 	if ckpt is not None:
 		model.load_state_dict(ckpt['model'])
@@ -186,23 +152,28 @@ if __name__=='__main__':
 
 
 	print("Starting Epochs")
+	checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
+	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
+	checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
+	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 	hsmm = []
 	nb_dim = 2*model.latent_dim
 	nb_states = args.hsmm_components
 	for i in range(NUM_ACTIONS):
-		hsmm.append(pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states))
-		hsmm[-1].init_zeros()
-		hsmm[-1].init_priors = np.ones(nb_states) / nb_states
-		hsmm[-1].Trans = np.ones((nb_states, nb_states))/nb_states
-		hsmm[-1].Mu_Pd = np.zeros(nb_states)
-		hsmm[-1].Sigma_Pd = np.ones(nb_states)
-		hsmm[-1].Trans_Pd = np.ones((nb_states, nb_states))/nb_states
+		hsmm_i = pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states)
+		hsmm_i.init_zeros()
+		hsmm_i.init_priors = np.ones(nb_states) / nb_states
+		hsmm_i.Trans = np.ones((nb_states, nb_states))/nb_states
+		hsmm_i.Mu_Pd = np.zeros(nb_states)
+		hsmm_i.Sigma_Pd = np.ones(nb_states)
+		hsmm_i.Trans_Pd = np.ones((nb_states, nb_states))/nb_states
+		hsmm.append(hsmm_i)
 
-	for epoch in range(global_epochs,global_epochs+global_config.EPOCHS):
+	for epoch in range(global_epochs,global_config.EPOCHS):
 		model.train()
-		train_recon, train_kl, train_loss, x_gen, zx_samples, x, iters = run_iteration(train_iterator, hsmm if args.model!='AE' else [], model, optimizer)
+		train_recon, train_kl, train_loss, x_gen, zx_samples, x, iters = run_iteration(train_iterator, hsmm if (args.model!='AE' or epoch==0)  else [], model, optimizer)
 		steps_done = (epoch+1)*iters
-		write_summaries_vae(writer, train_recon, train_kl, train_loss, x_gen, zx_samples, x, steps_done, 'train', model)
+		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
 		params = []
 		grads = []
 		for name, param in model.named_parameters():
@@ -220,26 +191,20 @@ if __name__=='__main__':
 				s = train_iterator.dataset.actidx[a]
 				z_encoded = []
 				for j in range(s[0], s[1]):
-				# for j in np.random.randint(s[0], s[1], 12):
 					x, label = train_iterator.dataset[j]
-					assert np.all(label == a)
-					x = torch.Tensor(x).to(device)
-					seq_len, dims = x.shape
-					x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
-					
-					zpost_samples = model(x, encode_only=True)
+					zpost_samples = model(torch.Tensor(x).to(device), encode_only=True)
 					z_encoded.append(torch.concat([zpost_samples[0], zpost_samples[1]], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm[a].init_hmm_kbins(z_encoded)
 				hsmm[a].em(z_encoded, nb_max_steps=60)
 			
 			test_recon, test_kl, test_loss, x_gen, zx_samples, x, iters = run_iteration(test_iterator, hsmm, model, optimizer)
-			write_summaries_vae(writer, test_recon, test_kl, test_loss, x_gen, zx_samples, x, steps_done, 'test', model)
+			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
 			print(np.any(np.isnan(x_gen.detach().cpu().numpy())))
 
 		if epoch % global_config.EPOCHS_TO_SAVE == 0:
-			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.4d.pth'%(epoch))
+			os.rename(os.path.join(MODELS_FOLDER, 'last_ckpt.pth'), os.path.join(MODELS_FOLDER, '2ndlast_ckpt.pth'))
+			checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
 			torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
-
 		print(epoch,'epochs done')
 
 	writer.flush()

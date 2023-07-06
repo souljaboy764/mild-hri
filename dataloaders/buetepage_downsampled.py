@@ -48,7 +48,7 @@ class SequenceDataset(Dataset):
 				seq_len, numdims = self.traj_data[i].shape
 				traj_1 = self.traj_data[i][:, None, :numdims//2]
 				traj_2 = self.traj_data[i][:, None, numdims//2:]
-				self.traj_data[i] = downsample_trajs([np.concatenate([traj_1, traj_2], axis=-1)], 4*seq_len//10, device)[0, :, 0, :]
+				self.traj_data[i] = downsample_trajs([np.concatenate([traj_1, traj_2], axis=-1)], 2*seq_len//10, device)[0, :, 0, :]
 
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
@@ -84,10 +84,10 @@ class SequenceWindowDataset(Dataset):
 				dim = traj_shape[-1]
 				for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
 					idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-					trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
-				trajs_concat = np.concatenate(trajs_concat,axis=-1)
+					trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2))[None, :, :])
+				trajs_concat = np.concatenate(trajs_concat,axis=0) # trajs_concat[0]: human 1, trajs_concat[2]: human 2
 				self.traj_data.append(trajs_concat)
-				self.labels.append(labels[i][:trajs_concat.shape[0]])
+				self.labels.append(labels[i][:trajs_concat.shape[1]])
 			
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)

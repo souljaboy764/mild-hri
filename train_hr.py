@@ -85,12 +85,6 @@ def run_iteration_both(iterator, hsmm, model_h, model_r, optimizer):
 
 		reg_loss = 0.
 		if hsmm != []:
-			# reg_loss = model.latent_loss(zpost_dist, zpost_samples)
-			# zh_prior = torch.distributions.MultivariateNormal(mu_h[seq_alpha], Sigma_h[seq_alpha])
-			# kld_h = torch.distributions.kl_divergence(zh_post_dist, zh_prior).mean(0)
-			# # kld_h = kl_div(zh_post_mean, zh_post_var, mu_prior[0, c:c+1].repeat(seq_len,1), Sigma_prior[0, c:c+1].repeat(seq_len,1,1)).mean(0)
-			# # reg_loss += (alpha_hsmm[c]*kld_h).mean()
-			# reg_loss += model_h.beta*kld_h.mean()
 
 			zr_prior = torch.distributions.MultivariateNormal(mu_r[seq_alpha], Sigma_r[seq_alpha])
 			kld_r = torch.distributions.kl_divergence(zr_post_dist, zr_prior).mean(0)
