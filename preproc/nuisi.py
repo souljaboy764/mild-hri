@@ -184,6 +184,6 @@ for a in range(len(actions)):
 	# np.savez_compressed('cropped_downsampled/'+action[:-1], data=cropped_trajs_downsampled)
 	print('')
 	# plt.show()
-np.savez_compressed('labelled_sequences.npz', train_data=train_data, train_labels=train_labels, test_data=test_data, test_labels=test_labels)
+np.savez_compressed('nuisi_dataset.npz', train_data=train_data, train_labels=train_labels, test_data=test_data, test_labels=test_labels)
 print(train_act_idx)
 print(test_act_idx)
