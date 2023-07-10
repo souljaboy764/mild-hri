@@ -498,7 +498,12 @@ joints_dic = {joints[i]:i for i in range(len(joints))}
 
 def angle(a,b):
 	dot = np.dot(a,b)
-	return np.arccos(dot/(np.linalg.norm(a)*np.linalg.norm(b)))
+	cos = dot/(np.linalg.norm(a)*np.linalg.norm(b))
+	if np.allclose(cos, 1):
+		cos = 1
+	elif np.allclose(cos, -1):
+		cos = -1
+	return np.arccos(cos)
 
 def projectToPlane(plane, vec):
 	return (vec - plane)*np.dot(plane,vec)
@@ -523,21 +528,6 @@ def rotation_normalization(skeleton):
 
 def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 	
-
-	# T = np.eye(4)
-	# T[:3,3] = skeleton[0]
-	# T[:3,:3] = rotation_normalization(skeleton)
-	# rightShoulder = skeleton[joints_dic["right_shoulder"]] - T[:3,3]
-	# rightShoulder = T[:3,:3].dot(rightShoulder)
-	# rightElbow = skeleton[joints_dic["right_elbow"]] - T[:3,3]
-	# rightElbow = T[:3,:3].dot(rightElbow)
-	# rightHand = skeleton[joints_dic["right_hand"]] - T[:3,3]
-	# rightHand = T[:3,:3].dot(rightHand)
-
-	# rightShoulder = skeleton[joints_dic["right_shoulder"]]
-	# rightElbow = skeleton[joints_dic["right_elbow"]]
-	# rightHand = skeleton[joints_dic["right_hand"]]
-
 	rightShoulder = skeleton[1]
 	rightElbow = skeleton[2]
 	rightHand = skeleton[3]
@@ -553,11 +543,10 @@ def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 
 	rightElbowAngle = angle(rightUpperArm, rightUnderArm)
 
-	armlengthRight = np.linalg.norm(rightUpperArm)
 	rightYaw = np.arctan2(rightUpperArm[1],-rightUpperArm[2]) # Comes from robot structure
 	# rightYaw -= 0.009
-	rightPitch = np.arctan2(rightUpperArm[0], rightUpperArm[2]) # Comes from robot structure
-	rightPitch -= np.pi/2
+	rightPitch = np.arctan2(max(rightUpperArm[0],0), rightUpperArm[2]) # Comes from robot structure
+	rightPitch -= np.pi/2 # for pepper frame
 	
 	# Recreating under Arm Position with known Angles(without roll)
 	rightRotationAroundY = euler_matrix(0, rightPitch, 0,)[:3,:3]
@@ -570,14 +559,14 @@ def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 	# Calculating the angle betwenn actual under arm position and the one calculated without roll
 	rightRoll = angle(rightUnderArmWithoutRoll, rightUnderArm)
 	
-	#This is a check which sign the angle has as the calculation only produces positive angles
-	rightRotationAroundArm = euler_matrix(0, 0, -rightRoll)[:3, :3]
-	rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
-	r1saver = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
+	# # This is a check which sign the angle has as the calculation only produces positive angles
+	# rightRotationAroundArm = euler_matrix(0, 0, -rightRoll)[:3, :3]
+	# rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
+	# r1saver = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
 	
-	rightRotationAroundArm = euler_matrix(0, 0, rightRoll)[:3, :3]
-	rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
-	r1 = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
+	# rightRotationAroundArm = euler_matrix(0, 0, rightRoll)[:3, :3]
+	# rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
+	# r1 = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
 	
 	# if (r1 > r1saver):
 	# 	rightRoll = -rightRoll

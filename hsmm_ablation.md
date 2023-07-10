@@ -121,3 +121,8 @@ Conditioning with and without VAE Cov
 
 | W/o Cov | 3 | 12 | 1.5048e-01 ± 3.6504e-01 |
 | With  Cov | 3 | 12 | 1.5045e-01 ± 3.6496e-01 |
+
+
+Diagonalized HSMM w/o VAE cov:
+MSE Without Adaptation: 1.8563e-01 ± 3.6565e-01
+MSE Without Adaptation: 1.8563e-01 ± 3.6565e-01

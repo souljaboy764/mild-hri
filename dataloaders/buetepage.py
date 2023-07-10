@@ -1,36 +1,10 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+from utils import *
 
-# class SkeletonDataset(Dataset):
-# 	def __init__(self, datafile, train=True):
-# 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# 		with np.load(datafile, allow_pickle=True) as data:
-# 			if train:
-# 				traj_data = np.array(data['train_data'])
-# 				self.actidx = np.array([[0,24],[24,54],[54,110],[110,149]])
-# 			else:
-# 				traj_data = np.array(data['test_data'])
-# 				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
-# 			self.labels = traj_data[:, -1]
-# 			self.idx = traj_data[:, -2]
-# 			self.traj_data = traj_data[:, :-2]
-# 			self.len = self.traj_data.shape[0]
-# 			starts = np.where(self.idx==0)[0]
-# 			ends = np.array(starts[1:].tolist() + [traj_data.shape[0]])
-# 			self.traj_lens = np.zeros_like(self.idx)
-# 			for i in range(len(starts)):
-# 				self.traj_lens[starts[i]:ends[i]] = ends[i] - starts[i]
-
-
-# 	def __len__(self):
-# 		return self.len
-
-# 	def __getitem__(self, index):
-# 		return self.traj_data[index], self.idx[index], self.labels[index], self.traj_lens[index]
-
-class SequenceDataset(Dataset):
-	def __init__(self, datafile, train=True):
+class HHDataset(Dataset):
+	def __init__(self, datafile, train=True, downsample=1):
 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		with np.load(datafile, allow_pickle=True) as data:
 			if train:
@@ -43,6 +17,16 @@ class SequenceDataset(Dataset):
 				self.labels = data['test_labels']
 				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
 				# self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]]) # Human-robot trajs
+
+			for i in range(len(self.traj_data)):
+				seq_len, njoints, dims = self.traj_data[i].shape
+				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, njoints*3))
+				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, njoints*3))
+				if downsample < 1:
+					assert downsample != 0
+					self.traj_data[i] = downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device)[0, :, 0, :]
+				else:
+					self.traj_data[i] = np.concatenate([traj_1, traj_2], axis=-1)
 			
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
@@ -54,42 +38,50 @@ class SequenceDataset(Dataset):
 
 	def __getitem__(self, index):
 		return self.traj_data[index].astype(np.float32), self.labels[index].astype(np.int32)
+	
+class PepperDataset(HHDataset):
+	def __init__(self, datafile, train=True, downsample=1):
+		super(PepperDataset, self).__init__(datafile, train, downsample)
+		for i in range(len(self.traj_data)):
+			seq_len, dims = self.traj_data[i].shape
+			traj_r = []
+			for frame in self.traj_data[i][:, dims//2:].reshape((seq_len, dims//6, 3)):
+				traj_r.append(joint_angle_extraction(frame))
+			traj_r = np.array(traj_r) # seq_len, 4
+			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
 
-class SequenceWindowDataset(Dataset):
-	def __init__(self, datafile, train=True, window_length=40):
-		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-		with np.load(datafile, allow_pickle=True) as data:
-			if train:
-				traj_data = data['train_data']
-				labels = data['train_labels']
-				self.actidx = np.array([[0,24],[24,54],[54,110],[110,149]])
-				# self.actidx = np.array([[0,8],[8,16],[16,24],[24,32]]) # Human-robot trajs
-			else:
-				traj_data = data['test_data']
-				labels = data['test_labels']
-				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
-				# self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]])
 
-			self.traj_data = []
-			self.labels = []
-			for i in range(len(traj_data)):
-				trajs_concat = []
-				traj_shape = traj_data[i].shape
-				dim = traj_shape[-1]
-				for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-					idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-					trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
-				trajs_concat = np.concatenate(trajs_concat,axis=-1)
-				self.traj_data.append(trajs_concat)
-				self.labels.append(labels[i][:trajs_concat.shape[0]])
-			
-			self.len = len(self.traj_data)
-			self.labels = np.zeros(self.len)
-			for idx in range(len(self.actidx)):
-				self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
+def window_concat(traj_data, window_length):
+	window_trajs = []
+	for i in range(len(traj_data)):
+		trajs_concat = []
+		traj_shape = traj_data[i].shape
+		dim = traj_shape[-1]
+		for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+			trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+		trajs_concat = np.concatenate(trajs_concat,axis=-1)
+		window_trajs.append(trajs_concat)
+	return window_trajs
+
+class HHWindowDataset(Dataset):
+	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
+		self.init(HHDataset(datafile, train, downsample), window_length)
+
+	def init(self, dataset, window_length):
+		self.actidx = dataset.actidx
+		self.traj_data = window_concat(dataset.traj_data, window_length)
+		self.len = len(self.traj_data)
+		self.labels = np.zeros(self.len)
+		for idx in range(len(self.actidx)):
+			self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
 
 	def __len__(self):
 		return self.len
 
 	def __getitem__(self, index):
 		return self.traj_data[index].astype(np.float32), self.labels[index].astype(np.int32)
+	
+class PepperWindowDataset(HHWindowDataset):
+	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
+		self.init(PepperDataset(datafile, train, downsample), window_length)
