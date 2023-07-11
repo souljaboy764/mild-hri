@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import os, datetime, argparse
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
 import config
@@ -28,8 +28,7 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 		for label in range(len(hsmm)):
 			mu_prior.append(torch.concat([hsmm[label].mu[None,:,:z_dim], hsmm[label].mu[None, :,z_dim:]]).to(device))
 			Sigma_prior.append(torch.concat([hsmm[label].sigma[None, :, :z_dim, :z_dim], hsmm[label].sigma[None, :, z_dim:, z_dim:]]).to(device) + I)
-			if isinstance(hsmm[label], pbd_torch.HMM):
-				alpha_prior.append(hsmm[label].forward_variable(marginal=[], sample_size=num_alpha))
+			alpha_prior.append(hsmm[label].forward_variable(marginal=[], sample_size=num_alpha))
 
 	for i, x in enumerate(iterator):
 		# start = datetime.datetime.now()
@@ -53,7 +52,7 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 			fwd_h = hsmm[label].forward_variable(demo=zh_post.mean, marginal=slice(0, z_dim))
 		
 		zr_cond = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-										return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
+										return_cov=False, data_Sigma_in=zh_post.covariance_matrix)
 		xr_cond = model_r._output(model_r._decoder(zr_cond))
 		
 		if model_h.training:
@@ -97,7 +96,7 @@ if __name__=='__main__':
 						help='Number of components to use in HSMM Prior (default: 5).')
 	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'FullCovVAE'],
 						help='Model to use: AE, VAE or FullCovVAE (default: VAE).')
-	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'buetepage_pepper'],
+	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage', 'buetepage_pepper'],
 						help='Dataset to use: buetepage, buetepage_pepper or nuitrack (default: buetepage_pepper).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
@@ -180,7 +179,7 @@ if __name__=='__main__':
 	nb_states = args.hsmm_components
 	with torch.no_grad():
 		for i in range(NUM_ACTIONS):
-			hsmm_i = pbd_torch.HMM(nb_dim=nb_dim, nb_states=nb_states)
+			hsmm_i = pbd_torch.HSMM(nb_dim=nb_dim, nb_states=nb_states)
 			hsmm_i.init_zeros(device)
 			hsmm_i.init_priors = torch.ones(nb_states, device=device) / nb_states
 			hsmm_i.Trans = torch.ones((nb_states, nb_states), device=device)/nb_states
@@ -195,14 +194,15 @@ if __name__=='__main__':
 		model_r.load_state_dict(ckpt['model_r'])
 		optimizer.load_state_dict(ckpt['optimizer'])
 		hsmm = ckpt['hsmm']
-
+		global_epochs = ckpt['epoch']
+	else:
+		checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
+		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
+		checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
+		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 	print("Starting Epochs")
-	checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
-	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
-	checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
-	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 
-	for epoch in range(global_epochs,global_epochs+global_config.EPOCHS):
+	for epoch in range(global_epochs, global_config.EPOCHS): # + global_epochs):
 		model_h.train()
 		model_r.train()
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer)
@@ -267,4 +267,4 @@ if __name__=='__main__':
 	writer.flush()
 
 	checkpoint_file = os.path.join(MODELS_FOLDER, 'final.pth')
-	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_step, 'hsmm':hsmm}, checkpoint_file)
+	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_epochs+global_config.EPOCHS, 'hsmm':hsmm}, checkpoint_file)

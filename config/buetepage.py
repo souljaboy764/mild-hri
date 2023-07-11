@@ -8,7 +8,7 @@ class global_config:
 		self.num_actions = 4
 		self.optimizer = 'AdamW'
 		self.lr = 1e-4
-		self.EPOCHS = 100
+		self.EPOCHS = 200
 		self.EPOCHS_TO_SAVE = 5
 		self.beta = 0.005
 
