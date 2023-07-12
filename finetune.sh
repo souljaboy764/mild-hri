@@ -1,0 +1,4 @@
+CUDA_VISIBLE_DEVICES=2 nohup python3 finetune_robotdecoder.py --ckpt logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial0/models/final.pth --cov >> logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial0.txt &
+CUDA_VISIBLE_DEVICES=2 nohup python3 finetune_robotdecoder.py --ckpt logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial1/models/final.pth --cov >> logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial1.txt &
+CUDA_VISIBLE_DEVICES=2 nohup python3 finetune_robotdecoder.py --ckpt logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial2/models/final.pth --cov >> logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial2.txt &
+CUDA_VISIBLE_DEVICES=2 nohup python3 finetune_robotdecoder.py --ckpt logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial3/models/final.pth --cov >> logs/2023/downsampled/bp_pepper/mild_crossrecon_covcond/z5/trial3.txt &
