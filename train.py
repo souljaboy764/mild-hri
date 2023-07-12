@@ -44,21 +44,58 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 		x_r = x[:, model_h.input_dim:]
 		alpha = alpha_prior[label][:, torch.linspace(0, num_alpha-1, seq_len, dtype=int)]
 		
+		# xh_gen, zh_samples, zh_post = model_h(x_h)
+		# xr_gen, zr_samples, zr_post = model_r(x_r)
+
 		zh_post = model_h(x_h, dist_only=True)
 		zr_post = model_r(x_r, dist_only=True)
+
 		if model_h.training:
 			fwd_h = alpha
 		else:
 			fwd_h = hsmm[label].forward_variable(demo=zh_post.mean, marginal=slice(0, z_dim))
+			# zh_samples = [zh_post.mean]
 		
-		zr_cond = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-										return_cov=False, data_Sigma_in=zh_post.covariance_matrix)
-		xr_cond = model_r._output(model_r._decoder(zr_cond))
-		
+		# xr_cond = []
+		# for zh in zh_samples:
+		# 	zr_cond = hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+		# 									return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
+		# 	xr_cond.append(model_r._output(model_r._decoder(zr_cond))[None])
+		# xr_cond = torch.concat(xr_cond)
+
+			zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+										# return_cov=True, data_Sigma_in=zh_post.covariance_matrix)
+										return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
+		# if model_h.training:
+		# 	try:
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma, validate_args=False)
+		# 	except Exception as e:
+		# 		with torch.no_grad():
+		# 			print('zr_cond_sigma PSD', torch.all(torch.linalg.eigvalsh(zr_cond_sigma)>=0))
+		# 			print('zr_cond_sigma PD ', torch.all(torch.linalg.eigvalsh(zr_cond_sigma)>0))
+		# 		eigvals, eigvecs = torch.linalg.eigh(zr_cond_sigma)
+		# 		eigvals = torch.nn.ReLU()(eigvals) + 1e-6
+		# 		# new_sigma = torch.matmul(torch.matmul(eigvecs, torch.diag_embed(eigvals)), torch.transpose(eigvecs,-1,-2))
+		# 		new_sigma = eigvecs @ torch.diag_embed(eigvals) @ eigvecs.inverse()
+		# 		with torch.no_grad():
+		# 			new_eigvals = torch.linalg.eigvalsh(new_sigma)
+		# 			diff = (new_eigvals - eigvals)**2
+		# 			print('new_sigma eigvals', torch.allclose(new_eigvals, eigvals,atol=1e-6), diff.max(), diff.mean(), new_eigvals.min())
+		# 			print('new_sigma PSD', torch.all(torch.linalg.eigvalsh(new_sigma)>=0))
+		# 			print('new_sigma PD ', torch.all(torch.linalg.eigvalsh(new_sigma)>0))
+		# 		# zr_cond_sigma = new_sigma + zr_cond_sigma - zr_cond_sigma.detach()
+		# 		# new_sigma.grad = zr_cond_sigma.grad
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, new_sigma, validate_args=False)
+		# 	xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
+		# else:
+		# 	xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
+			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 		if model_h.training:
+			# recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
+			
 			xh_gen = model_h._output(model_h._decoder(zh_post.mean))
 			xr_gen = model_r._output(model_r._decoder(zr_post.mean))
-			recon_loss = ((xh_gen - x_h)**2).mean() + ((xr_gen - x_r)**2).mean() + ((xr_cond - x_r)**2).mean()
+			recon_loss = ((xh_gen - x_h)**2).mean() + ((xr_gen - x_r)**2).mean()# + ((xr_cond - x_r)**2).mean()
 		else:
 			recon_loss = ((xr_cond - x_r)**2).sum()
 		
@@ -172,20 +209,19 @@ if __name__=='__main__':
 	if not os.path.exists(SUMMARIES_FOLDER):
 		print("Creating Model Directory")
 		os.makedirs(SUMMARIES_FOLDER)
-	np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config, robot_vae_config=robot_vae_config)
 
 	hsmm = []
 	nb_dim = 2*args.latent_dim
 	nb_states = args.hsmm_components
 	with torch.no_grad():
 		for i in range(NUM_ACTIONS):
-			hsmm_i = pbd_torch.HSMM(nb_dim=nb_dim, nb_states=nb_states)
+			hsmm_i = pbd_torch.HMM(nb_dim=nb_dim, nb_states=nb_states)
 			hsmm_i.init_zeros(device)
 			hsmm_i.init_priors = torch.ones(nb_states, device=device) / nb_states
 			hsmm_i.Trans = torch.ones((nb_states, nb_states), device=device)/nb_states
-			hsmm_i.Mu_Pd = torch.zeros(nb_states, device=device)
-			hsmm_i.Sigma_Pd = torch.ones(nb_states, device=device)
-			hsmm_i.Trans_Pd = torch.ones((nb_states, nb_states), device=device)/nb_states
+			# hsmm_i.Mu_Pd = torch.zeros(nb_states, device=device)
+			# hsmm_i.Sigma_Pd = torch.ones(nb_states, device=device)
+			# hsmm_i.Trans_Pd = torch.ones((nb_states, nb_states), device=device)/nb_states
 			hsmm.append(hsmm_i)
 	
 	if args.ckpt is not None:
@@ -194,15 +230,20 @@ if __name__=='__main__':
 		model_r.load_state_dict(ckpt['model_r'])
 		optimizer.load_state_dict(ckpt['optimizer'])
 		hsmm = ckpt['hsmm']
+		hyperparams = np.load(os.path.join(os.path.dirname(args.ckpt),'hyperparams.npz'), allow_pickle=True)
+		seed = hyperparams['args'].item().seed
+		torch.manual_seed(seed)
+		np.random.seed(seed)
 		global_epochs = ckpt['epoch']
 	else:
+		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config, robot_vae_config=robot_vae_config)
 		checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
 		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 		checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
 		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 	print("Starting Epochs")
 
-	for epoch in range(global_epochs, global_config.EPOCHS): # + global_epochs):
+	for epoch in range(global_epochs, global_config.EPOCHS + global_epochs):
 		model_h.train()
 		model_r.train()
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer)
@@ -235,7 +276,7 @@ if __name__=='__main__':
 					z_h = model_h(x_h, encode_only=True)
 					z_r = model_r(x_r, encode_only=True)
 					z_encoded.append(torch.concat([z_h, z_r], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-				hsmm_np = pbd.HSMM(nb_dim=nb_dim, nb_states=nb_states)
+				hsmm_np = pbd.HMM(nb_dim=nb_dim, nb_states=nb_states)
 				hsmm_np.init_hmm_kbins(z_encoded)
 				hsmm_np.em(z_encoded)
 				# hsmm_np.em(np.concatenate(z_encoded))
@@ -247,12 +288,12 @@ if __name__=='__main__':
 				hsmm[a].trans = torch.Tensor(hsmm_np.trans).to(device).requires_grad_(False)
 				hsmm[a].Trans = torch.Tensor(hsmm_np.Trans).to(device).requires_grad_(False)
 				hsmm[a].init_priors = torch.Tensor(hsmm_np.init_priors).to(device).requires_grad_(False)
-				hsmm[a].mu_d = torch.Tensor(hsmm_np.mu_d).to(device)
-				hsmm[a].sigma_d = torch.Tensor(hsmm_np.sigma_d).to(device)
-				hsmm[a].trans_d = torch.Tensor(hsmm_np.trans_d).to(device)
-				hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device)
-				hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device)
-				hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device)
+				# hsmm[a].mu_d = torch.Tensor(hsmm_np.mu_d).to(device)
+				# hsmm[a].sigma_d = torch.Tensor(hsmm_np.sigma_d).to(device)
+				# hsmm[a].trans_d = torch.Tensor(hsmm_np.trans_d).to(device)
+				# hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device)
+				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device)
+				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device)
 						
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer)
 			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
@@ -266,5 +307,5 @@ if __name__=='__main__':
 
 	writer.flush()
 
-	checkpoint_file = os.path.join(MODELS_FOLDER, 'final.pth')
-	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_epochs+global_config.EPOCHS, 'hsmm':hsmm}, checkpoint_file)
+	checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch+1}.pth')
+	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)

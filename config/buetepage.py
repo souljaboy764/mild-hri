@@ -8,7 +8,7 @@ class global_config:
 		self.num_actions = 4
 		self.optimizer = 'AdamW'
 		self.lr = 1e-4
-		self.EPOCHS = 200
+		self.EPOCHS = 50
 		self.EPOCHS_TO_SAVE = 5
 		self.beta = 0.005
 
@@ -24,7 +24,7 @@ class ae_config:
 		self.activation = 'LeakyReLU'
 		self.z_prior_mean = 0
 		self.z_prior_std = 1
-		self.mce_samples = 10
+		self.mce_samples = 4
 
 class robot_vae_config:
 	def __init__(self):
@@ -38,3 +38,4 @@ class robot_vae_config:
 		self.activation = 'LeakyReLU'
 		self.z_prior_mean = 0
 		self.z_prior_std = 1
+		self.mce_samples = 4
