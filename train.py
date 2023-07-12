@@ -44,11 +44,11 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 		x_r = x[:, model_h.input_dim:]
 		alpha = alpha_prior[label][:, torch.linspace(0, num_alpha-1, seq_len, dtype=int)]
 		
-		# xh_gen, zh_samples, zh_post = model_h(x_h)
-		# xr_gen, zr_samples, zr_post = model_r(x_r)
+		xh_gen, zh_samples, zh_post = model_h(x_h)
+		xr_gen, zr_samples, zr_post = model_r(x_r)
 
-		zh_post = model_h(x_h, dist_only=True)
-		zr_post = model_r(x_r, dist_only=True)
+		# zh_post = model_h(x_h, dist_only=True)
+		# zr_post = model_r(x_r, dist_only=True)
 
 		if model_h.training:
 			fwd_h = alpha
@@ -56,6 +56,7 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 			fwd_h = hsmm[label].forward_variable(demo=zh_post.mean, marginal=slice(0, z_dim))
 			# zh_samples = [zh_post.mean]
 		
+		# # Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
 		# xr_cond = []
 		# for zh in zh_samples:
 		# 	zr_cond = hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
@@ -63,39 +64,33 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 		# 	xr_cond.append(model_r._output(model_r._decoder(zr_cond))[None])
 		# xr_cond = torch.concat(xr_cond)
 
-			zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-										# return_cov=True, data_Sigma_in=zh_post.covariance_matrix)
-										return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
-		# if model_h.training:
-		# 	try:
-		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma, validate_args=False)
-		# 	except Exception as e:
-		# 		with torch.no_grad():
-		# 			print('zr_cond_sigma PSD', torch.all(torch.linalg.eigvalsh(zr_cond_sigma)>=0))
-		# 			print('zr_cond_sigma PD ', torch.all(torch.linalg.eigvalsh(zr_cond_sigma)>0))
-		# 		eigvals, eigvecs = torch.linalg.eigh(zr_cond_sigma)
-		# 		eigvals = torch.nn.ReLU()(eigvals) + 1e-6
-		# 		# new_sigma = torch.matmul(torch.matmul(eigvecs, torch.diag_embed(eigvals)), torch.transpose(eigvecs,-1,-2))
-		# 		new_sigma = eigvecs @ torch.diag_embed(eigvals) @ eigvecs.inverse()
-		# 		with torch.no_grad():
-		# 			new_eigvals = torch.linalg.eigvalsh(new_sigma)
-		# 			diff = (new_eigvals - eigvals)**2
-		# 			print('new_sigma eigvals', torch.allclose(new_eigvals, eigvals,atol=1e-6), diff.max(), diff.mean(), new_eigvals.min())
-		# 			print('new_sigma PSD', torch.all(torch.linalg.eigvalsh(new_sigma)>=0))
-		# 			print('new_sigma PD ', torch.all(torch.linalg.eigvalsh(new_sigma)>0))
-		# 		# zr_cond_sigma = new_sigma + zr_cond_sigma - zr_cond_sigma.detach()
-		# 		# new_sigma.grad = zr_cond_sigma.grad
-		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, new_sigma, validate_args=False)
-		# 	xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
-		# else:
-		# 	xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
-			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
+		# # Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
+		zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+										return_cov=True, data_Sigma_in=zh_post.covariance_matrix)
+		if model_h.training:
+			try:
+				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
+			except Exception as e:
+				eigvals, eigvecs = torch.linalg.eigh(zr_cond_sigma)
+				D = torch.diag_embed(torch.nn.ReLU()(eigvals) + 1e-2)
+				new_sigma = eigvecs @ D @ eigvecs.transpose(-1,-2)
+				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, new_sigma)
+			xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
+		else:
+			xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
+
+		# Simple conditioninal reconstruction
+		# zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+		# 								return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
+		# xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
+
+		
 		if model_h.training:
 			# recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
 			
 			xh_gen = model_h._output(model_h._decoder(zh_post.mean))
 			xr_gen = model_r._output(model_r._decoder(zr_post.mean))
-			recon_loss = ((xh_gen - x_h)**2).mean() + ((xr_gen - x_r)**2).mean()# + ((xr_cond - x_r)**2).mean()
+			recon_loss = ((xh_gen - x_h)**2).mean() + ((xr_gen - x_r)**2).mean() + ((xr_cond - x_r)**2).mean()
 		else:
 			recon_loss = ((xr_cond - x_r)**2).sum()
 		
