@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import os, datetime, argparse
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
@@ -19,11 +19,19 @@ from typing import List
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:networks.VAE, model_r:networks.VAE, optimizer:torch.optim.Optimizer):
+def run_iteration(
+					iterator:DataLoader, 
+		  			hsmm:List[pbd_torch.HMM], 
+					model_h:networks.VAE, 
+					model_r:networks.VAE, 
+					optimizer:torch.optim.Optimizer, 
+					scheduler:torch.optim.lr_scheduler._LRScheduler,
+					cov_cond:bool,
+				):
 	total_recon, total_reg, total_loss, mu_prior, Sigma_prior, alpha_prior = [], [], [], [], [], []
 	z_dim = model_h.latent_dim
 	num_alpha = 1500
-	I = torch.eye(z_dim, device=device)*1e-8
+	I = torch.eye(z_dim, device=device)*1e-6
 	with torch.no_grad():
 		for label in range(len(hsmm)):
 			mu_prior.append(torch.concat([hsmm[label].mu[None,:,:z_dim], hsmm[label].mu[None, :,z_dim:]]).to(device))
@@ -45,77 +53,73 @@ def run_iteration(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:network
 		alpha = alpha_prior[label][:, torch.linspace(0, num_alpha-1, seq_len, dtype=int)]
 		
 		xh_gen, zh_samples, zh_post = model_h(x_h)
-		xr_gen, zr_samples, zr_post = model_r(x_r)
-
-		# zh_post = model_h(x_h, dist_only=True)
-		# zr_post = model_r(x_r, dist_only=True)
+		xr_gen, _, zr_post = model_r(x_r)
 
 		if model_h.training:
 			fwd_h = alpha
 		else:
 			fwd_h = hsmm[label].forward_variable(demo=zh_post.mean, marginal=slice(0, z_dim))
-			# zh_samples = [zh_post.mean]
-		
-		# # Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
-		# xr_cond = []
-		# for zh in zh_samples:
-		# 	zr_cond = hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-		# 									return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
-		# 	xr_cond.append(model_r._output(model_r._decoder(zr_cond))[None])
-		# xr_cond = torch.concat(xr_cond)
+
+		if cov_cond:
+			data_Sigma_in = zh_post.covariance_matrix
+		else:
+			data_Sigma_in = None
+
+		# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
+		xr_cond = []
+		for zh in zh_samples:
+			zr_cond = hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+											return_cov=False, data_Sigma_in=data_Sigma_in)
+			xr_cond.append(model_r._output(model_r._decoder(zr_cond))[None])
+		xr_cond = torch.concat(xr_cond)
 
 		# # Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
-		zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-										return_cov=True, data_Sigma_in=zh_post.covariance_matrix)
-		if model_h.training:
-			try:
-				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
-			except Exception as e:
-				eigvals, eigvecs = torch.linalg.eigh(zr_cond_sigma)
-				D = torch.diag_embed(torch.nn.ReLU()(eigvals) + 1e-2)
-				new_sigma = eigvecs @ D @ eigvecs.transpose(-1,-2)
-				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, new_sigma)
-			xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
-		else:
-			xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
+		# zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+		# 								return_cov=True, data_Sigma_in=data_Sigma_in)
+		# if model_h.training:
+		# 	try:
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
+		# 	except Exception as e:
+		# 		D, U = torch.linalg.eigh(zr_cond_sigma)
+		# 		D = torch.diag_embed(torch.nn.ReLU()(D)) + I
+		# 		zr_cond_sigma_new = U @ D @ U.transpose(-1,-2) + I
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma_new)
+		# 	xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
+		# else:
+		# 	xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
-		# Simple conditioninal reconstruction
-		# zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-		# 								return_cov=False)#, data_Sigma_in=zh_post.covariance_matrix)
-		# xr_cond = model_r._output(model_r._decoder(zr_cond_mean[None]))
-
-		
 		if model_h.training:
-			# recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
-			
-			xh_gen = model_h._output(model_h._decoder(zh_post.mean))
-			xr_gen = model_r._output(model_r._decoder(zr_post.mean))
-			recon_loss = ((xh_gen - x_h)**2).mean() + ((xr_gen - x_r)**2).mean() + ((xr_cond - x_r)**2).mean()
+			recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
+			# recon_loss = ((xh_gen - x_h[None])**2).mean(-1) + ((xr_gen - x_r[None])**2).mean(-1) #+ ((xr_cond - x_r[None])**2).mean(-1)
 		else:
+			# Simple conditioninal reconstruction
+			zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+											return_cov=False, data_Sigma_in=data_Sigma_in)
+			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
+			# assert not torch.any(torch.isnan(zr_cond_mean))
+			# assert not torch.any(torch.isinf(zr_cond_mean))
+			# assert not torch.any(torch.isnan(xr_cond))
+			# assert not torch.any(torch.isinf(xr_cond))
 			recon_loss = ((xr_cond - x_r)**2).sum()
-		
 		loss = recon_loss
 
 		if model_h.beta!=0:
 			with torch.no_grad():
-				seq_alpha = alpha.argmax(0)
-				zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, seq_alpha], Sigma_prior[label][0, seq_alpha])
-				zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], Sigma_prior[label][1, seq_alpha])
-			reg_loss = model_h.beta * torch.distributions.kl_divergence(zh_post, zh_prior).mean() + \
-						model_r.beta * torch.distributions.kl_divergence(zr_post, zr_prior).mean()
-				
+				zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, :, None], Sigma_prior[label][0, :, None])
+				zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, :, None], Sigma_prior[label][1, :, None])
+			reg_loss = (alpha*(model_h.beta * torch.distributions.kl_divergence(zh_post, zh_prior) + \
+					model_r.beta * torch.distributions.kl_divergence(zr_post, zr_prior))).mean()
 		else:
 			reg_loss = 0.
 
 		loss += reg_loss
-
-		total_recon.append(recon_loss)
-		total_reg.append(reg_loss)
-		total_loss.append(loss)
+		total_recon.append(recon_loss.mean())
+		total_reg.append(reg_loss.mean())
+		total_loss.append(loss.mean())
 		if model_h.training:
 			loss.backward()
 			optimizer.step()
-		# print((datetime.datetime.now() - start).total_seconds()/seq_len)
+			scheduler.step()
 	return total_recon, total_reg, total_loss, i
 
 if __name__=='__main__':
@@ -136,6 +140,8 @@ if __name__=='__main__':
 						help='Latent space dimension (default: 3)')
 	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
 						help='Checkpoint to resume training from (default: None)')
+	parser.add_argument('--cov-cond', action='store_true', 
+						help='Whether to use covariance for conditioning or not')
 	args = parser.parse_args()
 	print('Random Seed',args.seed)
 	torch.manual_seed(args.seed)
@@ -234,14 +240,14 @@ if __name__=='__main__':
 		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, global_config=global_config, ae_config=ae_config, robot_vae_config=robot_vae_config)
 		checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
 		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
-		checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
-		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
+	
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 10, eta_min=1e-5)
 	print("Starting Epochs")
-
+	
 	for epoch in range(global_epochs, global_config.EPOCHS + global_epochs):
 		model_h.train()
 		model_r.train()
-		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer)
+		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, scheduler, args.cov_cond)
 		steps_done = (epoch+1)*iters
 		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
 		params = []
@@ -273,7 +279,7 @@ if __name__=='__main__':
 					z_encoded.append(torch.concat([z_h, z_r], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm_np = pbd.HMM(nb_dim=nb_dim, nb_states=nb_states)
 				hsmm_np.init_hmm_kbins(z_encoded)
-				hsmm_np.em(z_encoded)
+				hsmm_np.em(z_encoded, reg=1e-4, reg_finish=1e-4)
 				# hsmm_np.em(np.concatenate(z_encoded))
 
 				hsmm[a].mu = torch.Tensor(hsmm_np.mu).to(device).requires_grad_(False)
@@ -283,19 +289,18 @@ if __name__=='__main__':
 				hsmm[a].trans = torch.Tensor(hsmm_np.trans).to(device).requires_grad_(False)
 				hsmm[a].Trans = torch.Tensor(hsmm_np.Trans).to(device).requires_grad_(False)
 				hsmm[a].init_priors = torch.Tensor(hsmm_np.init_priors).to(device).requires_grad_(False)
-				# hsmm[a].mu_d = torch.Tensor(hsmm_np.mu_d).to(device)
-				# hsmm[a].sigma_d = torch.Tensor(hsmm_np.sigma_d).to(device)
-				# hsmm[a].trans_d = torch.Tensor(hsmm_np.trans_d).to(device)
-				# hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device)
-				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device)
-				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device)
+				# hsmm[a].mu_d = torch.Tensor(hsmm_np.mu_d).to(device).requires_grad_(False)
+				# hsmm[a].sigma_d = torch.Tensor(hsmm_np.sigma_d).to(device).requires_grad_(False)
+				# hsmm[a].trans_d = torch.Tensor(hsmm_np.trans_d).to(device).requires_grad_(False)
+				# hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device).requires_grad_(False)
+				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device).requires_grad_(False)
+				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device).requires_grad_(False)
 						
-			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer)
+			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer, scheduler, args.cov_cond)
 			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
 
 		if epoch % global_config.EPOCHS_TO_SAVE == 0:
-			os.rename(os.path.join(MODELS_FOLDER, 'last_ckpt.pth'), os.path.join(MODELS_FOLDER, '2ndlast_ckpt.pth'))
-			checkpoint_file = os.path.join(MODELS_FOLDER, 'last_ckpt.pth')
+			checkpoint_file = os.path.join(MODELS_FOLDER, f'{epoch:04d}.pth')
 			torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
 
 		print(epoch,'epochs done')

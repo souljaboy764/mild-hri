@@ -7,9 +7,9 @@ class global_config:
 		self.robot_joints = 7
 		self.num_actions = 4
 		self.optimizer = 'AdamW'
-		self.lr = 1e-4
-		self.EPOCHS = 50
-		self.EPOCHS_TO_SAVE = 5
+		self.lr = 1e-3
+		self.EPOCHS = 200
+		self.EPOCHS_TO_SAVE = 10
 		self.beta = 0.005
 
 class ae_config:
