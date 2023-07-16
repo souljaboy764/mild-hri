@@ -32,18 +32,16 @@ def finetune_dataset(iterator:DataLoader, hsmm:List[pbd_torch.HMM], model_h:netw
 			x_h = x[:, :model_h.input_dim]
 			x_r = x[:, model_h.input_dim:]
 			training_targets += x_r.detach().cpu().numpy().tolist()
+			
+			zh_post = model_h(x_h, dist_only=True)
 			if cov:
-				zh_post = model_h(x_h, dist_only=True)
-				training_inputs += hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
-														return_cov=False,
-														data_Sigma_in=zh_post.covariance_matrix
-														).detach().cpu().numpy().tolist()
+				data_Sigma_in=zh_post.covariance_matrix
 			else:
-				zh = model_h(x_h, encode_only=True)
-				training_inputs +=  hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
-						   								return_cov=False,
-														data_Sigma_in = None,
-														).detach().cpu().numpy().tolist()
+				data_Sigma_in = None
+			zr_cond_mu = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
+													return_cov=False,
+													data_Sigma_in=data_Sigma_in)
+			training_inputs +=	zr_cond_mu.detach().cpu().numpy().tolist()
 
 	return np.hstack([training_inputs, training_targets]).astype(np.float32)
 
@@ -94,6 +92,7 @@ if __name__=='__main__':
 	model_h.load_state_dict(ckpt['model_h'])
 	model_r = getattr(networks, args_ckpt.model)(**(robot_vae_config.__dict__)).to(device)
 	model_r.load_state_dict(ckpt['model_r'])
+	hsmm = ckpt['hsmm']
 
 	params = []
 	for n,p in model_r.named_parameters():
@@ -104,8 +103,6 @@ if __name__=='__main__':
 			p.requires_grad = False
 	for p in model_h.parameters():
 		p.requires_grad = False
-	hsmm = ckpt['hsmm']
-
 
 	# params = list(model_r._output.parameters()) + list(model_r._decoder.parameters())
 	named_params = list(model_r._output.named_parameters()) + list(model_r._decoder.named_parameters())
