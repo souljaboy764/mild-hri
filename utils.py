@@ -457,28 +457,27 @@ def batchNearestPD(A):
 	spacing = torch.finfo(torch.float32).eps
 	# The above is different from [1]. It appears that MATLAB's `chol` Cholesky
 	# decomposition will accept matrixes with exactly 0-eigenvalue, whereas
-	# Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
+	# torch will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
 	# for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
 	# will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
 	# the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
 	# `spacing` will, for Gaussian random matrixes of small dimension, be on
-	# othe order of 1e-16. In practice, both ways converge, as the unit test
-	# below suggests.
+	# othe order of 1e-16. In practice, both ways converge
 	with torch.no_grad():
 		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
 	k = 1
 	while not batchIsPD(A3):
-		mineig = torch.real(torch.symeig(A3)[0].type(torch.cfloat))[:,0]
-		v = (-mineig[:,None,None] * k**2 + spacing).repeat(1,A.shape[-1],A.shape[-1])
-		A3 += I * v
+		A3 = A3 + I * torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + spacing
 		k += 1
+		if k>15:
+			raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
 
 	return A3
 
 def batchIsPD(B):
 	"""Returns true when input is positive-definite, via Cholesky"""
 	try:
-		torch.cholesky(B)
+		torch.linalg.cholesky(B)
 		return True
 	except:
 		return False
