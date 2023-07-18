@@ -17,13 +17,14 @@ from typing import List
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def evaluate_ckpt(ckpt_path):
+def evaluate_ckpt(ckpt_path, use_cov):
 	ckpt = torch.load(ckpt_path)
 	hyperparams = np.load(os.path.join(os.path.dirname(ckpt_path),'hyperparams.npz'), allow_pickle=True)
 	args_ckpt = hyperparams['args'].item()
 	global_config = hyperparams['global_config'].item()
 	ae_config = hyperparams['ae_config'].item()
 	robot_vae_config = hyperparams['robot_vae_config'].item()
+	# print(args_ckpt.dataset)
 	if args_ckpt.dataset == 'buetepage_pepper':
 		dataset = dataloaders.buetepage.PepperWindowDataset
 	elif args_ckpt.dataset == 'buetepage':
@@ -82,27 +83,40 @@ if __name__=='__main__':
 
 	for model_type, use_cov in [
 							('vae_vanilla', False),#, 'final.pth'),
+							# ('vae_vanilla_hsmm', False),#, 'final.pth'),
 							('vae_crossrecon_samplenocovcond', False),#, 'final.pth'),
 							('vae_crossrecon_samplecovcond', True),#, 'final.pth'),
+							('vae_crossrecon_nocovcondsampling', False),#, 'final.pth'),
+							('vae_crossrecon_covcondsampling', True),#, 'final.pth'),
 							# ('vae_crossrecon_nocovcond', False),#, 'final.pth'),
 							# ('vae_crossrecon_covcond', True),#, 'final.pth'),
-							('mild_vanilla', False),#, 'final.pth'),
-							('mild_crossrecon_samplenocovcond', False),#, 'final_250.pth'),
-							('mild_crossrecon_samplecovcond', True),#, 'final.pth'),
-							# ('mild_crossrecon_nocovcond', False),#, 'final_250.pth'),
-							# ('mild_crossrecon_covcond', True),#, 'final.pth'),
+							# ('mild_vanilla', False),#, 'final.pth'),
+							# # ('mild_vanilla_hsmm', False),#, 'final.pth'),
+							# ('mild_crossrecon_samplenocovcond', False),#, 'final_250.pth'),
+							# ('mild_crossrecon_samplecovcond', True),#, 'final.pth'),
+							# ('mild_crossrecon_nocovcondsampling', False),#, 'final.pth'),
+							# ('mild_crossrecon_covcondsampling', True),#, 'final.pth'),
+							# # ('mild_crossrecon_nocovcond', False),#, 'final_250.pth'),
+							# # ('mild_crossrecon_covcond', True),#, 'final.pth'),
 						]:
-		for ckpt_name in ['final_100.pth', 'final_100_finetuning.pth']:
+		for ckpt_name in [
+							'final_100.pth', 
+							# 'final_100_finetuning.pth', 
+							'final_199.pth', 
+							# 'final_199_finetuning.pth',
+						]:
 			pred_mse = []
 			vae_mse = []
 			for trial in range(4):
-				ckpt_path = f'logs/2023/downsampled/bp_hh/{model_type}/z5/trial{trial}/models/{ckpt_name}'
-				pred_mse_ckpt, vae_mse_ckpt = evaluate_ckpt(ckpt_path)
+				ckpt_path = f'logs/2023/downsampled/bp_pepper/{model_type}/z5/trial{trial}/models/{ckpt_name}'
+				pred_mse_ckpt, vae_mse_ckpt = evaluate_ckpt(ckpt_path, use_cov)
 				pred_mse += pred_mse_ckpt
 				vae_mse += vae_mse_ckpt
-			if ckpt_name == 'final_100_finetuning.pth':
-				ckpt_name = 'finetuned'
-			elif ckpt_name == 'final_100.pth':
-				ckpt_name = 'final_100'
+			if ckpt_name[10:] == 'finetuning.pth':
+				ckpt_name = 'tuned_'+ckpt_name[6:9]
+			# elif ckpt_name == 'final_100.pth':
+				# ckpt_name = 'final_100'
+			else:
+				ckpt_name = ckpt_name[:-4]
 			model_name = f'{model_type:<40}' + str(use_cov)[0] + f' {ckpt_name}'
 			print(f'{model_name}\t{np.mean(pred_mse):.4e} ± {np.std(pred_mse):.4e} \t{np.mean(vae_mse):.4e} ± {np.std(vae_mse):.4e}')

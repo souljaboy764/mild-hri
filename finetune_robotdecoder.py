@@ -170,5 +170,6 @@ if __name__=='__main__':
 
 	writer.flush()
 
-	checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch+1}_finetuning.pth')
+	# checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch+1}_finetuning.pth')
+	checkpoint_file = args.ckpt[:-4]+'_finetuning.pth'
 	torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
