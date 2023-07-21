@@ -2,15 +2,15 @@ class global_config:
 	def __init__(self):
 		self.num_joints = 4
 		self.joint_dims = 3
-		self.window_size = 5
-		self.downsample = 0.2
+		self.window_size = 40
+		self.downsample = 0.4
 		self.robot_joints = 7
 		self.num_actions = 4
 		self.optimizer = 'AdamW'
 		self.lr = 1e-3
-		self.EPOCHS = 200
+		self.EPOCHS = 100
 		self.EPOCHS_TO_SAVE = 10
-		self.beta = 0.005
+		self.beta = 0.5
 
 class ae_config:
 	def __init__(self):
@@ -18,7 +18,7 @@ class ae_config:
 		self.num_joints = config.num_joints
 		self.joint_dims = config.joint_dims
 		self.window_size = config.window_size
-		self.hidden_sizes = [40, 20]
+		self.hidden_sizes = [250, 150]
 		self.latent_dim = 7
 		self.beta = config.beta
 		self.activation = 'LeakyReLU'
@@ -32,7 +32,7 @@ class robot_vae_config:
 		self.num_joints = config.robot_joints
 		self.joint_dims = 1
 		self.window_size = config.window_size
-		self.hidden_sizes = [40, 20]
+		self.hidden_sizes = [250, 150]
 		self.latent_dim = 7
 		self.beta = config.beta
 		self.activation = 'LeakyReLU'

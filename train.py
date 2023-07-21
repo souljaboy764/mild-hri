@@ -65,7 +65,7 @@ def run_iteration(
 		else:
 			data_Sigma_in = None
 
-		# # Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
+		# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
 		# xr_cond = []
 		# for zh in zh_samples:
 		# 	zr_cond = hsmm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
@@ -73,26 +73,29 @@ def run_iteration(
 		# 	xr_cond.append(model_r._output(model_r._decoder(zr_cond))[None])
 		# xr_cond = torch.concat(xr_cond)
 
-		# Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
-		zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-										return_cov=True, data_Sigma_in=data_Sigma_in)
-		if model_h.training:
-			try:
-				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
-			except Exception as e:
-				zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, batchNearestPD(zr_cond_sigma))
-			xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
-		else:
-			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
+		# # Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
+		# zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+		# 								return_cov=True, data_Sigma_in=data_Sigma_in)
+		# if model_h.training:
+		# 	try:
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
+		# 	except Exception as e:
+		# 		zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, batchNearestPD(zr_cond_sigma))
+		# 	xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
+		# else:
+		# 	xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
 		if model_h.training:
-			recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
+			# recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + 10*((xr_cond - x_r[None])**2).mean()
+			recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean()
+			# recon_loss = ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
+			
 			# recon_loss = ((xh_gen - x_h[None])**2).mean(-1) + ((xr_gen - x_r[None])**2).mean(-1) #+ ((xr_cond - x_r[None])**2).mean(-1)
 		else:
-			# # Simple conditioninal reconstruction
-			# zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
-			# 								return_cov=False, data_Sigma_in=data_Sigma_in)
-			# xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
+			# Simple conditioninal reconstruction
+			zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
+											return_cov=False, data_Sigma_in=data_Sigma_in)
+			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 			# assert not torch.any(torch.isnan(zr_cond_mean))
 			# assert not torch.any(torch.isinf(zr_cond_mean))
 			# assert not torch.any(torch.isnan(xr_cond))
@@ -238,7 +241,7 @@ if __name__=='__main__':
 		checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
 		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 	
-	scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 10, eta_min=1e-5)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50, eta_min=1e-5)
 	print("Starting Epochs")
 	
 	for epoch in range(global_epochs, global_config.EPOCHS):# + global_epochs):
@@ -276,7 +279,7 @@ if __name__=='__main__':
 					z_encoded.append(torch.concat([z_h, z_r], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm_np = pbd.HMM(nb_dim=nb_dim, nb_states=nb_states)
 				hsmm_np.init_hmm_kbins(z_encoded)
-				hsmm_np.em(z_encoded, reg=1e-4, reg_finish=1e-4)
+				hsmm_np.em(z_encoded, reg=1e-8, reg_finish=1e-8)
 				# hsmm_np.em(np.concatenate(z_encoded))
 
 				hsmm[a].mu = torch.Tensor(hsmm_np.mu).to(device).requires_grad_(False)
