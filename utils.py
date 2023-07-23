@@ -433,7 +433,7 @@ def kl_div_diag(mu0, sigma0, mu1, sigma1, reduction='sum'):
 	return getattr(torch, reduction)(torch.log(sigma1/sigma0) + (var0 + (mu0-mu1)**2)/(2*var1) - 0.5)
 
 
-def batchNearestPD(A):
+def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
 	"""Find the nearest positive-definite matrix to input
 	A Python/Numpy port [1] of John D'Errico's `nearestSPD` MATLAB code [2], which
 	credits [3].
@@ -453,8 +453,7 @@ def batchNearestPD(A):
 
 	if batchIsPD(A3):
 		return A3
-
-	spacing = torch.finfo(torch.float32).eps
+	
 	# The above is different from [1]. It appears that MATLAB's `chol` Cholesky
 	# decomposition will accept matrixes with exactly 0-eigenvalue, whereas
 	# torch will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
@@ -467,7 +466,7 @@ def batchNearestPD(A):
 		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
 	k = 1
 	while not batchIsPD(A3):
-		A3 = A3 + I * torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + spacing
+		A3 = A3 + I * torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + eps
 		k += 1
 		if k>15:
 			raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")

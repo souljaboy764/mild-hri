@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 
 import numpy as np
 import os, datetime, argparse
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
@@ -111,9 +111,9 @@ if __name__=='__main__':
 						]:
 			pred_mse = []
 			vae_mse = []
-			for trial in range(1,4):
+			for trial in range(4):
 				# ckpt_path = f'logs/2023/bp_pepper_downsampled/hmm/{model_type}/z5/trial{trial}/models/{ckpt_name}'
-				ckpt_path = f'logs/2023/bp_hh/hmm/{model_type}/z5/trial{trial}/models/{ckpt_name}'
+				ckpt_path = f'logs/2023/bp_pepper/hsmm/{model_type}/z5/trial{trial}/models/{ckpt_name}'
 				pred_mse_ckpt, vae_mse_ckpt = evaluate_ckpt(ckpt_path, use_cov)
 				pred_mse += pred_mse_ckpt
 				vae_mse += vae_mse_ckpt
