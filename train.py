@@ -26,6 +26,7 @@ def run_iteration(
 					model_r:networks.VAE, 
 					optimizer:torch.optim.Optimizer,
 					args,
+					epoch,
 				):
 	total_recon, total_reg, total_loss, mu_prior, Sigma_prior, alpha_prior = [], [], [], [], [], []
 	z_dim = model_h.latent_dim
@@ -87,7 +88,7 @@ def run_iteration(
 				xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
 		if model_h.training:
-			if args.variant==1:
+			if args.variant==1 or (args.variant!=1 and epoch < 30):
 				recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean()
 			else:
 				recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
@@ -100,7 +101,8 @@ def run_iteration(
 				zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
-			recon_loss = ((xr_cond - x_r)**2).sum()
+			# recon_loss = ((xr_cond - x_r)**2).sum()
+			recon_loss = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).mean()
 		loss = recon_loss
 
 		if model_h.beta!=0:
@@ -117,8 +119,9 @@ def run_iteration(
 		total_reg.append(reg_loss.mean())
 		total_loss.append(loss.mean())
 		if model_h.training:
-			torch.nn.utils.clip_grad_value_(model_h.parameters(), args.grad_clip)
-			torch.nn.utils.clip_grad_value_(model_r.parameters(), args.grad_clip)
+			if args.grad_clip!=0:
+				torch.nn.utils.clip_grad_norm_(model_h.parameters(), args.grad_clip)
+				torch.nn.utils.clip_grad_norm_(model_r.parameters(), args.grad_clip)
 			loss.backward()
 			optimizer.step()
 	return total_recon, total_reg, total_loss, i
@@ -137,9 +140,9 @@ if __name__=='__main__':
 						help='Dataset to use: buetepage, buetepage_pepper or nuitrack (default: buetepage_pepper).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
-	parser.add_argument('--latent-dim', type=int, default=3, metavar='Z',
-						help='Latent space dimension (default: 3)')
-	parser.add_argument('--cov-reg', type=float, default=1e-4, metavar='EPS',
+	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
+						help='Latent space dimension (default: 5)')
+	parser.add_argument('--cov-reg', type=float, default=1e-6, metavar='EPS',
 						help='Positive value to add to covariance diagonal (default: 1e-4)')
 	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
 						help='Scaling factor for KL divergence (default: 0.005)')
@@ -153,15 +156,11 @@ if __name__=='__main__':
 						help='Value to clip gradients at (default: 1)')
 	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
 						help='Number of epochs to train for (default: 100)')
-	parser.add_argument('--lr-schedule', type=int, default=20, metavar='T0',
-						help='Number of steps to cyle LR scheduler (default: 10)')
-	parser.add_argument('--lr-start', type=float, default=1e-4, metavar='LR',
-						help='Starting Learning Rate (default: 1e-4)')
-	parser.add_argument('--lr-min', type=float, default=1e-5, metavar='LR_MIN',
-						help='Starting Learning Rate (default: 1e-4)')
-	parser.add_argument('--optimizer', type=str, default='AdamW', metavar='OPTIM', choices=['AdamW', 'Adam', 'Adagrad'],
-						help='Optimizer to use: AdamW, Adam or Adagrad (default: AdamW).')
-	parser.add_argument('--variant', type=int, default=1, metavar='VARIANT', choices=[1, 2, 3],
+	parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+						help='Starting Learning Rate (default: 1e-2)')
+	parser.add_argument('--optimizer', type=str, default='AdamW', metavar='OPTIM', choices=['AdamW', 'Adam', 'Adagrad', 'RMSprop'],
+						help='Optimizer to use: AdamW, Adam, Adagrad or RMSprop (default: AdamW).')
+	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3],
 						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
 	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
 						help='Checkpoint to resume training from (default: None)')
@@ -203,8 +202,8 @@ if __name__=='__main__':
 	model_r = getattr(networks, args.model)(**(robot_vae_config.__dict__)).to(device)
 	params = list(model_h.parameters()) + list(model_r.parameters())
 	names_params = list(model_h.named_parameters()) + list(model_r.named_parameters())
-	optimizer = getattr(torch.optim, args.optimizer)(params, lr=args.lr_start)
-	scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.lr_schedule, eta_min=args.lr_min)
+	optimizer = getattr(torch.optim, args.optimizer)(params, lr=args.lr)
+	scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
 	
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	print("Building Writer")
@@ -270,21 +269,6 @@ if __name__=='__main__':
 	print("Starting Epochs")
 	
 	for epoch in range(global_epochs, args.epochs):# + global_epochs):
-		model_h.train()
-		model_r.train()
-		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, args)
-		steps_done = (epoch+1)*iters
-		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
-		params = []
-		grads = []
-		for name, param in names_params:
-			if param.grad is None:
-				continue
-			writer.add_histogram('grads/'+name, param.grad.reshape(-1), steps_done)
-			writer.add_histogram('param/'+name, param.reshape(-1), steps_done)
-			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
-				print('zero grad for',name)
-		
 		model_h.eval()
 		model_r.eval()
 		with torch.no_grad():
@@ -321,13 +305,27 @@ if __name__=='__main__':
 				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device).requires_grad_(False)
 				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device).requires_grad_(False)
 						
+		model_h.train()
+		model_r.train()
+		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
+		steps_done = (epoch+1)*iters
+		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
+		params = []
+		grads = []
+		for name, param in names_params:
+			if param.grad is None:
+				continue
+			writer.add_histogram('grads/'+name, param.grad.reshape(-1), steps_done)
+			writer.add_histogram('param/'+name, param.reshape(-1), steps_done)
+			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
+				print('zero grad for',name)
+		
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer, args)
 			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
 
 		if epoch % 10 == 0:
 			checkpoint_file = os.path.join(MODELS_FOLDER, f'{epoch:04d}.pth')
 			torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
-
 		scheduler.step()
 		print(epoch,'epochs done')
 
