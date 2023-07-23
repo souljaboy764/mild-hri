@@ -51,19 +51,28 @@ class PepperDataset(HHDataset):
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
 
 
-def window_concat(traj_data, window_length):
+def window_concat(traj_data, window_length, pepper=False):
 	window_trajs = []
 	for i in range(len(traj_data)):
 		trajs_concat = []
 		traj_shape = traj_data[i].shape
 		dim = traj_shape[-1]
-		# for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-		# 	trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
-		idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-		trajs_concat.append(traj_data[i][:,:dim//2][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
-		idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-		trajs_concat.append(traj_data[i][:,dim//2:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+		if pepper:
+			# for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+			# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+			# 	trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+			trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
+			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
+		else:
+			# for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+			# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+			# 	trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+			trajs_concat.append(traj_data[i][:,:dim//2][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+			trajs_concat.append(traj_data[i][:,dim//2:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
 
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)
@@ -71,9 +80,7 @@ def window_concat(traj_data, window_length):
 
 class HHWindowDataset(Dataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
-		self.init(HHDataset(datafile, train, downsample), window_length)
-
-	def init(self, dataset, window_length):
+		dataset = HHDataset(datafile, train, downsample)
 		self.actidx = dataset.actidx
 		self.traj_data = window_concat(dataset.traj_data, window_length)
 		self.len = len(self.traj_data)
@@ -89,4 +96,10 @@ class HHWindowDataset(Dataset):
 	
 class PepperWindowDataset(HHWindowDataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
-		self.init(PepperDataset(datafile, train, downsample), window_length)
+		dataset = PepperDataset(datafile, train, downsample)
+		self.actidx = dataset.actidx
+		self.traj_data = window_concat(dataset.traj_data, window_length, True)
+		self.len = len(self.traj_data)
+		self.labels = np.zeros(self.len)
+		for idx in range(len(self.actidx)):
+			self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
