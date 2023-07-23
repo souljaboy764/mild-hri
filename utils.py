@@ -440,16 +440,24 @@ def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
 	[1] https://stackoverflow.com/questions/43238173/python-convert-matrix-to-positive-semi-definite/43244194#43244194
 	[2] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
 	[3] N.J. Higham, "Computing a nearest symmetric positive semidefinite matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
+
+	Modified as the input will always be symmetic (covariance matrix), therefore can go ahead with eigh from the beginning and no need to ensure symmetry
 	"""
 
-	B = (A + torch.transpose(A,-2,-1))/2.
-	_, s, V = torch.svd(B)
-	sV = torch.bmm(torch.diag_embed(s),V)
-	H = torch.bmm(torch.transpose(V,-2,-1),sV)
+	# B = (A + torch.transpose(A,-2,-1))/2.
+	# _, s, V = torch.svd(B)
+	# sV = torch.bmm(torch.diag_embed(s),V)
+	# H = torch.bmm(torch.transpose(V,-2,-1),sV)
 
-	A2 = (B + H) / 2
+	# A2 = (B + H) / 2
 
-	A3 = (A2 + torch.transpose(A2,-2,-1)) / 2.
+	# A3 = (A2 + torch.transpose(A2,-2,-1)) / 2.
+	with torch.no_grad():
+		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
+
+	eigvals, eigvecs = torch.linalg.eigh(A)
+	eigvals_matrix = torch.diag_embed(torch.abs(eigvals)) + I * eps
+	A3 = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
 
 	if batchIsPD(A3):
 		return A3
@@ -462,11 +470,9 @@ def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
 	# the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
 	# `spacing` will, for Gaussian random matrixes of small dimension, be on
 	# othe order of 1e-16. In practice, both ways converge
-	with torch.no_grad():
-		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
 	k = 1
 	while not batchIsPD(A3):
-		A3 = A3 + I * torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + eps
+		A3 = A3 + I * (torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + eps)
 		k += 1
 		if k>15:
 			raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
