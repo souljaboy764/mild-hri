@@ -57,9 +57,14 @@ def window_concat(traj_data, window_length):
 		trajs_concat = []
 		traj_shape = traj_data[i].shape
 		dim = traj_shape[-1]
-		for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-			trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+		# for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+		# 	trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+		idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+		trajs_concat.append(traj_data[i][:,:dim//2][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+		idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+		trajs_concat.append(traj_data[i][:,dim//2:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)
 	return window_trajs
