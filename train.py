@@ -34,7 +34,7 @@ def run_iteration(
 	with torch.no_grad():
 		for label in range(len(hsmm)):
 			mu_prior.append(torch.concat([hsmm[label].mu[None,:,:z_dim], hsmm[label].mu[None, :,z_dim:]]).to(device))
-			Sigma_prior.append(torch.concat([hsmm[label].sigma[None, :, :z_dim, :z_dim], hsmm[label].sigma[None, :, z_dim:, z_dim:]]).to(device))
+			Sigma_prior.append(torch.concat([hsmm[label].sigma[None, :, :z_dim, :z_dim], hsmm[label].sigma[None, :, z_dim:, z_dim:]]).to(device) + hsmm[label].reg[:z_dim, :z_dim])
 			alpha_prior.append(hsmm[label].forward_variable(marginal=[], sample_size=num_alpha))
 
 	for i, x in enumerate(iterator):
@@ -63,7 +63,7 @@ def run_iteration(
 		else:
 			data_Sigma_in = None
 
-		if args.variant==2:
+		if args.variant==2 and epoch >= 30:
 			# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
 			xr_cond = []
 			zr_cond_mean = []
@@ -74,7 +74,7 @@ def run_iteration(
 			zr_cond_mean = torch.concat(zr_cond_mean)
 			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
-		elif args.variant==3:
+		elif args.variant==3 and epoch >= 30:
 			# Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
 			zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 											return_cov=True, data_Sigma_in=data_Sigma_in)
@@ -96,13 +96,13 @@ def run_iteration(
 			
 			# recon_loss = ((xh_gen - x_h[None])**2).mean(-1) + ((xr_gen - x_r[None])**2).mean(-1) #+ ((xr_cond - x_r[None])**2).mean(-1)
 		else:
-			if args.variant==1:
+			if args.variant==1 or (args.variant!=1 and epoch < 30):
 				# Simple conditioninal reconstruction
 				zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
-			# recon_loss = ((xr_cond - x_r)**2).sum()
-			recon_loss = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).mean()
+			recon_loss = ((xr_cond - x_r)**2).sum()
+			# recon_loss = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).mean()
 		loss = recon_loss
 
 		if model_h.beta!=0:
@@ -152,12 +152,12 @@ if __name__=='__main__':
 						help='Factor for downsampling the data (default: 0.2)')
 	parser.add_argument('--mce-samples', type=int, default=10, metavar='MCE',
 						help='Number of Monte Carlo samples to draw (default: 10)')
-	parser.add_argument('--grad-clip', type=float, default=1., metavar='CLIP',
-						help='Value to clip gradients at (default: 1)')
+	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
+						help='Value to clip gradients at (default: 0.5)')
 	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
 						help='Number of epochs to train for (default: 100)')
-	parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
-						help='Starting Learning Rate (default: 1e-2)')
+	parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
+						help='Starting Learning Rate (default: 5e-4)')
 	parser.add_argument('--optimizer', type=str, default='AdamW', metavar='OPTIM', choices=['AdamW', 'Adam', 'Adagrad', 'RMSprop'],
 						help='Optimizer to use: AdamW, Adam, Adagrad or RMSprop (default: AdamW).')
 	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3],
@@ -268,7 +268,14 @@ if __name__=='__main__':
 	
 	print("Starting Epochs")
 	
-	for epoch in range(global_epochs, args.epochs):# + global_epochs):
+	for epoch in range(global_epochs, args.epochs):# + global_epochs):		
+		model_h.train()
+		model_r.train()
+		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
+		steps_done = (epoch+1)*iters
+		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
+		params = []
+		grads = []
 		model_h.eval()
 		model_r.eval()
 		with torch.no_grad():
@@ -304,14 +311,6 @@ if __name__=='__main__':
 				# hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device).requires_grad_(False)
 				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device).requires_grad_(False)
 				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device).requires_grad_(False)
-						
-		model_h.train()
-		model_r.train()
-		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
-		steps_done = (epoch+1)*iters
-		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
-		params = []
-		grads = []
 		for name, param in names_params:
 			if param.grad is None:
 				continue
@@ -320,7 +319,7 @@ if __name__=='__main__':
 			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
 				print('zero grad for',name)
 		
-			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer, args)
+			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
 			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
 
 		if epoch % 10 == 0:
