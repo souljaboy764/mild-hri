@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 
+import argparse
+
 import torch
 import torch.nn.functional as F
 from torch.nn.functional import grid_sample, affine_grid
@@ -433,7 +435,7 @@ def kl_div_diag(mu0, sigma0, mu1, sigma1, reduction='sum'):
 	return getattr(torch, reduction)(torch.log(sigma1/sigma0) + (var0 + (mu0-mu1)**2)/(2*var1) - 0.5)
 
 
-def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
+def batchNearestPDCholesky(A, eps = torch.finfo(torch.float32).eps):
 	"""Find the nearest positive-definite matrix to input
 	A Python/Numpy port [1] of John D'Errico's `nearestSPD` MATLAB code [2], which
 	credits [3].
@@ -452,15 +454,18 @@ def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
 	# A2 = (B + H) / 2
 
 	# A3 = (A2 + torch.transpose(A2,-2,-1)) / 2.
+	flag, L = batchIsPD(A)
+	if flag:
+		return L
+	
+
 	with torch.no_grad():
 		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
 
 	eigvals, eigvecs = torch.linalg.eigh(A)
-	eigvals_matrix = torch.diag_embed(torch.abs(eigvals)) + I * eps
-	A3 = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
-
-	if batchIsPD(A3):
-		return A3
+	eigvals_matrix = torch.diag_embed(torch.abs(eigvals))
+	A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
+	A_ = A_ + I * (torch.abs(eigvals[:,0:1,None]) * k**2 + eps)
 	
 	# The above is different from [1]. It appears that MATLAB's `chol` Cholesky
 	# decomposition will accept matrixes with exactly 0-eigenvalue, whereas
@@ -471,21 +476,25 @@ def batchNearestPD(A, eps = torch.finfo(torch.float32).eps):
 	# `spacing` will, for Gaussian random matrixes of small dimension, be on
 	# othe order of 1e-16. In practice, both ways converge
 	k = 1
-	while not batchIsPD(A3):
-		A3 = A3 + I * (torch.abs(torch.linalg.eigh(A3)[0][:,0:1,None]) * k**2 + eps)
+	while not flag:
+		eigvals, eigvecs = torch.linalg.eigh(A)
+		eigvals_matrix = torch.diag_embed(torch.abs(eigvals))
+		A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
+		A_ = A_ + I * (torch.abs(eigvals[:,0:1,None]) * k**2 + eps)
 		k += 1
-		if k>15:
+		if k>20:
 			raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
+		flag, L = batchIsPD(A_)
 
-	return A3
+	return L
 
 def batchIsPD(B):
 	"""Returns true when input is positive-definite, via Cholesky"""
 	try:
-		torch.linalg.cholesky(B)
-		return True
+		L = torch.linalg.cholesky(B)
+		return True, L
 	except:
-		return False
+		return False, None
 
 # joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
 # # joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
@@ -532,9 +541,9 @@ def rotation_normalization(skeleton):
 
 def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 	
-	rightShoulder = skeleton[1]
-	rightElbow = skeleton[2]
-	rightHand = skeleton[3]
+	rightShoulder = skeleton[0]
+	rightElbow = skeleton[1]
+	rightHand = skeleton[2]
 	
 	rightYaw = 0
 	rightPitch = 0
@@ -631,3 +640,50 @@ def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if
 		train_data[i] = train_data[i][:, :, 0].cpu().detach().numpy() # J, D, downsample_len
 		train_data[i] = train_data[i].transpose(2,0,1) # downsample_len, J, D
 	return np.array(train_data)
+
+
+def training_argparse():
+	parser = argparse.ArgumentParser(description='HSMM VAE Training')
+	parser.add_argument('--results', type=str, default='./logs/debug',#+datetime.datetime.now().strftime("%m%d%H%M"),
+						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
+	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
+						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
+	parser.add_argument('--hsmm-components', type=int, default=5, metavar='N_COMPONENTS', 
+						help='Number of components to use in HSMM Prior (default: 5).')
+	parser.add_argument('--model', type=str, default='VAE', metavar='ARCH', choices=['AE', 'VAE', 'FullCovVAE'],
+						help='Model to use: AE, VAE or FullCovVAE (default: VAE).')
+	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage', 'buetepage_pepper'],
+						help='Dataset to use: buetepage, buetepage_pepper or nuitrack (default: buetepage_pepper).')
+	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
+						help='Random seed for training (randomized by default).')
+	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
+						help='Latent space dimension (default: 5)')
+	parser.add_argument('--cov-reg', type=float, default=1e-3, metavar='EPS',
+						help='Positive value to add to covariance diagonal (default: 1e-3)')
+	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
+						help='Scaling factor for KL divergence (default: 0.005)')
+	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
+						help='Window Size for inputs (default: 5)')
+	parser.add_argument('--downsample', type=float, default=0.2, metavar='DOWNSAMPLE',
+						help='Factor for downsampling the data (default: 0.2)')
+	parser.add_argument('--mce-samples', type=int, default=7, metavar='MCE',
+						help='Number of Monte Carlo samples to draw (default: 7)')
+	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
+						help='Value to clip gradients at (default: 0.5)')
+	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
+						help='Number of epochs to train for (default: 100)')
+	parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
+						help='Starting Learning Rate (default: 5e-4)')
+	parser.add_argument('--pretrain', type=int, default=0, metavar='PRETRAIN',
+						help='Number of epochs to pretrain for (default: 0)')
+	parser.add_argument('--gamma', type=float, default=1.0, metavar='GAMMA',
+						help='Starting Relative weight for decaying VAE vs conditional reconstruction (default: 1.0)')
+	parser.add_argument('--optimizer', type=str, default='AdamW', metavar='OPTIM', choices=['AdamW', 'Adam', 'Adagrad', 'RMSprop'],
+						help='Optimizer to use: AdamW, Adam, Adagrad or RMSprop (default: AdamW).')
+	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3],
+						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
+	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
+						help='Checkpoint to resume training from (default: None)')
+	parser.add_argument('--cov-cond', action='store_true', 
+						help='Whether to use covariance for conditioning or not')
+	return parser.parse_args()

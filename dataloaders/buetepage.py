@@ -20,8 +20,9 @@ class HHDataset(Dataset):
 
 			for i in range(len(self.traj_data)):
 				seq_len, njoints, dims = self.traj_data[i].shape
-				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, njoints*3))
-				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, njoints*3))
+				self.traj_data[i] = self.traj_data[i][:, 1:, :] # Ignoring the first shoulder/body joint as it is almost static
+				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, (njoints-1)*3))
+				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints-1)*3))
 				if downsample < 1:
 					assert downsample != 0
 					self.traj_data[i] = downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device)[0, :, 0, :]
@@ -46,10 +47,10 @@ class PepperDataset(HHDataset):
 			seq_len, dims = self.traj_data[i].shape
 			traj_r = []
 			for frame in self.traj_data[i][:, dims//2:].reshape((seq_len, dims//6, 3)):
-				traj_r.append(joint_angle_extraction(frame))
+				joints = joint_angle_extraction(frame)
+				traj_r.append(joints)
 			traj_r = np.array(traj_r) # seq_len, 4
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
-
 
 def window_concat(traj_data, window_length, pepper=False):
 	window_trajs = []
@@ -96,10 +97,11 @@ class HHWindowDataset(Dataset):
 	
 class PepperWindowDataset(HHWindowDataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
-		dataset = PepperDataset(datafile, train, downsample)
-		self.actidx = dataset.actidx
-		self.traj_data = window_concat(dataset.traj_data, window_length, True)
+		self._dataset = PepperDataset(datafile, train, downsample)
+		self.actidx = self._dataset.actidx
+		self.traj_data = window_concat(self._dataset.traj_data, window_length, True)
 		self.len = len(self.traj_data)
 		self.labels = np.zeros(self.len)
 		for idx in range(len(self.actidx)):
 			self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
+
