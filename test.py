@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import os, datetime, argparse
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import networks
 import config
@@ -21,17 +21,15 @@ def evaluate_ckpt(ckpt_path, use_cov):
 	ckpt = torch.load(ckpt_path)
 	hyperparams = np.load(os.path.join(os.path.dirname(ckpt_path),'hyperparams.npz'), allow_pickle=True)
 	args_ckpt = hyperparams['args'].item()
-	global_config = hyperparams['global_config'].item()
 	ae_config = hyperparams['ae_config'].item()
 	robot_vae_config = hyperparams['robot_vae_config'].item()
-	print(args_ckpt.dataset, global_config.downsample)
 	if args_ckpt.dataset == 'buetepage_pepper':
 		dataset = dataloaders.buetepage.PepperWindowDataset
 	elif args_ckpt.dataset == 'buetepage':
 		dataset = dataloaders.buetepage.HHWindowDataset
 	# TODO: Nuitrack
 
-	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=global_config.window_size, downsample=global_config.downsample), batch_size=1, shuffle=False)
+	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
 	model_h = getattr(networks, args_ckpt.model)(**(ae_config.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
@@ -40,11 +38,6 @@ def evaluate_ckpt(ckpt_path, use_cov):
 	model_r.load_state_dict(ckpt['model_r'])
 	model_r.eval()
 	hsmm = ckpt['hsmm']
-	if(isinstance(hsmm[0],pbd_torch.HSMM)):
-		print('HSMM')
-	else:
-		print('HMM')
-	# print(ckpt['epoch'])
 
 	pred_mse = []
 	vae_mse = []
@@ -86,12 +79,12 @@ if __name__=='__main__':
 	# torch.autograd.set_detect_anomaly(True)
 
 	for model_type, use_cov in [
-							('vae_vanilla', False),#, 'final.pth'),
+							# ('vae_vanilla', False),#, 'final.pth'),
 							# ('vae_vanilla_hsmm', False),#, 'final.pth'),
-							('vae_samplenocovcond', False),#, 'final.pth'),
-							('vae_samplecovcond', True),#, 'final.pth'),
-							('vae_nocovcondsampling', False),#, 'final.pth'),
-							('vae_covcondsampling', True),#, 'final.pth'),
+							# ('vae_samplenocovcond', False),#, 'final.pth'),
+							# ('vae_samplecovcond', True),#, 'final.pth'),
+							# ('vae_nocovcondsampling', False),#, 'final.pth'),
+							# ('vae_covcondsampling', True),#, 'final.pth'),
 							# ('vae_nocovcond', False),#, 'final.pth'),
 							# ('vae_covcond', True),#, 'final.pth'),
 							# ('mild_vanilla', False),#, 'final.pth'),
@@ -102,6 +95,32 @@ if __name__=='__main__':
 							# ('mild_covcondsampling', True),#, 'final.pth'),
 							# # ('mild_nocovcond', False),#, 'final_250.pth'),
 							# # ('mild_covcond', True),#, 'final.pth'),
+							('v1_0/vanilla0', False),
+							('v1_0/vanilla1', False),
+							('v1_0/vanilla2', False),
+							('v1_0/vanilla3', False),
+							('v1_0/vanilla4', False),
+							('v1_0/vanilla5', False),
+							('v1_0/vanilla6', False),
+							('v1_0/vanilla7', False),
+							('v2_1/vanilla0', False),
+							('v2_1/vanilla1', False),
+							('v2_1/vanilla2', False),
+							('v2_1/vanilla3', False),
+							('v2_1/vanilla4', False),
+							('v2_1/vanilla5', False),
+							('v2_1/vanilla6', False),
+							('v2_1/vanilla7', False),
+							# ('v3_1/pretrain0', False),
+							# ('v3_1/pretrain1', False),
+							# ('v3_1/pretrain2', False),
+							# ('v3_1/pretrain3', False),
+							# ('v3_1/pretrain4', False),
+							# ('v3_1/pretrain5', False),
+							# ('v3_1/pretrain6', False),
+							# ('v3_1/pretrain7', False),
+							# ('v3_1/pretrain8', False),
+							# ('v3_1/pretrain9', False),
 						]:
 		for ckpt_name in [
 							'final_100.pth', 
@@ -112,8 +131,8 @@ if __name__=='__main__':
 			pred_mse = []
 			vae_mse = []
 			for trial in range(4):
-				# ckpt_path = f'logs/2023/bp_pepper_downsampled/hmm/{model_type}/z5/trial{trial}/models/{ckpt_name}'
-				ckpt_path = f'logs/2023/bp_pepper/hsmm/{model_type}/z5/trial{trial}/models/{ckpt_name}'
+				# ckpt_path = f'logs/2023/bp_pepper_downsampled_klweight/{model_type}/models/{ckpt_name}'
+				ckpt_path = f'logs/2023/bp_pepper_downsampled_robotfuture_ablation/z05/{model_type}/trial{trial}/models/{ckpt_name}'
 				pred_mse_ckpt, vae_mse_ckpt = evaluate_ckpt(ckpt_path, use_cov)
 				pred_mse += pred_mse_ckpt
 				vae_mse += vae_mse_ckpt
