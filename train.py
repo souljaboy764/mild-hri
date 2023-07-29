@@ -7,7 +7,7 @@ import os, datetime
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-import networks
+from vae import VAE
 import config
 from utils import *
 import dataloaders
@@ -22,8 +22,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def run_iteration(
 					iterator:DataLoader, 
 		  			hsmm:List[pbd_torch.HMM], 
-					model_h:networks.VAE, 
-					model_r:networks.VAE, 
+					model_h:VAE, 
+					model_r:VAE, 
 					optimizer:torch.optim.Optimizer,
 					args,
 					epoch,
@@ -116,13 +116,13 @@ def run_iteration(
 				zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
-			xr_cond = xr_cond*args.joints_range + args.joints_min
-			x_r = x_r*args.joints_range + args.joints_min
+			# xr_cond = xr_cond*args.joints_range + args.joints_min
+			# x_r = x_r*args.joints_range + args.joints_min
 			recon_loss = ((xr_cond - x_r)**2).sum()
 	
 		loss = recon_loss
 
-		if args.beta!=0 and epoch > args.pretrain:
+		if args.beta!=0 and epoch >= args.pretrain:
 			with torch.no_grad():
 				alpha_argmax = fwd_h.argmax(0)
 				zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, alpha_argmax], Sigma_prior[label][0, alpha_argmax])
@@ -170,45 +170,11 @@ if __name__=='__main__':
 	test_iterator = DataLoader(dataset(args.src, train=False, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=False)
 	print("Creating Model and Optimizer")
 
-	model_h = getattr(networks, args.model)(**(ae_config.__dict__)).to(device)
-	model_r = getattr(networks, args.model)(**(robot_vae_config.__dict__)).to(device)
-	model_r._output = torch.nn.Sequential(model_r._output, torch.nn.Sigmoid())
+	model_h = VAE(**(ae_config.__dict__)).to(device)
+	model_r = VAE(**(robot_vae_config.__dict__)).to(device)
 	params = list(model_h.parameters()) + list(model_r.parameters())
 	named_params = list(model_h.named_parameters()) + list(model_r.named_parameters())
 	optimizer = getattr(torch.optim, args.optimizer)(params, lr=args.lr)
-
-	
-	joints_max = -2*np.ones(4)
-	joints_min = 2*np.ones(4)
-
-	for i in range(len(train_iterator.dataset._dataset.traj_data)):
-		traj_r = train_iterator.dataset._dataset.traj_data[i][:, -4:]
-		if np.any(traj_r.max(0)>joints_max):
-			mask = traj_r.max(0)>joints_max
-			joints_max[mask] = traj_r.max(0)[mask]
-		if np.any(traj_r.min(0)<joints_min):
-			mask = traj_r.min(0)<joints_min
-			joints_min[mask] = traj_r.min(0)[mask]
-	joints_range = joints_max - joints_min
-	for i in range(len(train_iterator.dataset._dataset.traj_data)):
-		train_iterator.dataset._dataset.traj_data[i][:, -4:] = (train_iterator.dataset._dataset.traj_data[i][:, -4:] - joints_min)/joints_range
-	for i in range(len(test_iterator.dataset._dataset.traj_data)):
-		test_iterator.dataset._dataset.traj_data[i][:, -4:] = (test_iterator.dataset._dataset.traj_data[i][:, -4:] - joints_min)/joints_range
-	
-	args.joints_max = np.tile(joints_max, args.window_size)
-	args.joints_min = np.tile(joints_min, args.window_size)
-	args.joints_range = args.joints_max - args.joints_min
-
-	for i in range(len(train_iterator.dataset.traj_data)):
-		train_iterator.dataset.traj_data[i][:, model_h.input_dim:] = (train_iterator.dataset.traj_data[i][:, model_h.input_dim:] - args.joints_min)/args.joints_range
-	for i in range(len(test_iterator.dataset.traj_data)):
-		test_iterator.dataset.traj_data[i][:, model_h.input_dim:] = (test_iterator.dataset.traj_data[i][:, model_h.input_dim:] - args.joints_min)/args.joints_range
-
-	args.joints_range = torch.Tensor(args.joints_range).to(device)
-	args.joints_min = torch.Tensor(args.joints_min).to(device)
-	args.joints_max = torch.Tensor(args.joints_max).to(device)
-
-
 
 	MODELS_FOLDER = os.path.join(args.results, "models")
 	SUMMARIES_FOLDER = os.path.join(args.results, "summary")
