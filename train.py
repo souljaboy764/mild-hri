@@ -65,7 +65,7 @@ def run_iteration(
 		else:
 			data_Sigma_in = None
 
-		if args.variant==2 and epoch >= args.pretrain:
+		if args.variant==2:
 			# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
 			xr_cond = []
 			zr_cond_mean = []
@@ -79,39 +79,35 @@ def run_iteration(
 			# assert not torch.any(torch.isinf(zr_cond_mean))
 			xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
-		elif args.variant==3 and epoch >= args.pretrain:
+		elif args.variant==3 or args.variant==4:
 			# Conditioned Sampling: Conditioning on the Posterior and then Sampling from the conditional distribution
 			if model_h.training and model_r.mce_samples>0:
 				zr_cond_mean, zr_cond_sigma = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 											return_cov=True, data_Sigma_in=data_Sigma_in)
-				# try:
-				# 	zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, zr_cond_sigma)
-				# except Exception as e:
-				# 	zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, batchNearestPD(zr_cond_sigma, eps=hsmm[label].reg[0][0]))
-				# xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
+				if args.variant==3:
+					zr_cond = torch.distributions.MultivariateNormal(zr_cond_mean, scale_tril=batchNearestPDCholesky(zr_cond_sigma))#, eps=hsmm[label].reg[:z_dim, :z_dim])
+				else:# args.variant==4:
+					zr_cond = torch.distributions.Normal(zr_cond_mean, torch.sqrt(torch.diagonal(zr_cond_sigma,dim1=-1,dim2=-2)))
 				
-				eps = torch.randn((model_r.mce_samples,)+zr_cond_mean.shape, device=zr_cond_mean.device)
-				zr_cond_L = batchNearestPDCholesky(zr_cond_sigma, eps=hsmm[label].reg[0][0])
-				zr_samples = zr_cond_mean + (zr_cond_L @ eps[..., None])[..., 0]
-				xr_cond = model_r._output(model_r._decoder(torch.concat([zr_samples, zr_cond_mean[None]], dim=0)))
+				# eps = torch.randn((model_r.mce_samples,)+zr_cond_mean.shape, device=zr_cond_mean.device)
+				# zr_samples = zr_cond_mean + (zr_cond_L @ eps[..., None])[..., 0]
+				xr_cond = model_r._output(model_r._decoder(torch.concat([zr_cond.rsample((model_r.mce_samples,)), zr_cond_mean[None]], dim=0)))
 			else:
 				zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 											return_cov=False, data_Sigma_in=data_Sigma_in)
 				xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
 
 		if model_h.training:
-			# Pretraining
-			if args.variant==1 or (args.variant!=1 and epoch < args.pretrain) or epoch==0:
+			if args.variant==1 or epoch==0:
 				recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean()
-			# conditional training
 			else:
-				if args.gamma!=1:
-					factor = args.gamma**(epoch - args.pretrain)
-					recon_loss = (((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean())*factor + ((xr_cond - x_r[None])**2).mean()*(1-factor)
+				if args.gamma==1:
+					recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
 				else:
-					recon_loss = (((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean()) + ((xr_cond - x_r[None])**2).mean()
+					factor = 1 - epoch/args.epochs
+					recon_loss = ((xh_gen - x_h[None])**2).mean() + 2*(((xr_gen - x_r[None])**2).mean()*factor + ((xr_cond - x_r[None])**2).mean()*(1-factor))
 		else:
-			if args.variant==1 or (args.variant!=1 and epoch < args.pretrain):
+			if args.variant==1:
 				# Simple conditioninal reconstruction
 				zr_cond_mean = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=fwd_h, 
 												return_cov=False, data_Sigma_in=data_Sigma_in)
@@ -122,19 +118,19 @@ def run_iteration(
 	
 		loss = recon_loss
 
-		if args.beta!=0 and epoch >= args.pretrain:
+		if args.beta!=0:
 			with torch.no_grad():
 				alpha_argmax = fwd_h.argmax(0)
 				zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, alpha_argmax], Sigma_prior[label][0, alpha_argmax])
 				zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, alpha_argmax], Sigma_prior[label][1, alpha_argmax])
 			reg_loss = args.beta * ((torch.distributions.kl_divergence(zh_post, zh_prior) + \
 					torch.distributions.kl_divergence(zr_post, zr_prior))).mean()
+			loss += reg_loss
+			total_reg.append(reg_loss.mean())
 		else:
-			reg_loss = torch.zeros_like(recon_loss)
+			total_reg.append(0)
 
-		loss += reg_loss
 		total_recon.append(recon_loss.mean())
-		total_reg.append(reg_loss.mean())
 		total_loss.append(loss.mean())
 		if model_h.training:
 			if args.grad_clip!=0:
@@ -174,13 +170,17 @@ if __name__=='__main__':
 	model_r = VAE(**(robot_vae_config.__dict__)).to(device)
 	params = list(model_h.parameters()) + list(model_r.parameters())
 	named_params = list(model_h.named_parameters()) + list(model_r.named_parameters())
-	optimizer = getattr(torch.optim, args.optimizer)(params, lr=args.lr)
+	optimizer = torch.optim.AdamW(params, lr=args.lr)
 
 	MODELS_FOLDER = os.path.join(args.results, "models")
 	SUMMARIES_FOLDER = os.path.join(args.results, "summary")
 	global_step = 0
 	global_epochs = 0
 
+	if args.variant == 3:
+		cov_reg = torch.diag_embed(torch.tile(torch.linspace(0.91, 1.0, args.latent_dim),(2,)))*args.cov_reg
+	else:
+		cov_reg = args.cov_reg
 	
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	print("Building Writer")
@@ -233,10 +233,10 @@ if __name__=='__main__':
 		model_r.load_state_dict(ckpt['model_r'])
 		optimizer.load_state_dict(ckpt['optimizer'])
 		hsmm = ckpt['hsmm']
-		hyperparams = np.load(os.path.join(os.path.dirname(args.ckpt),'hyperparams.npz'), allow_pickle=True)
-		seed = hyperparams['args'].item().seed
-		torch.manual_seed(seed)
-		np.random.seed(seed)
+		# hyperparams = np.load(os.path.join(os.path.dirname(args.ckpt),'hyperparams.npz'), allow_pickle=True)
+		# seed = hyperparams['args'].item().seed
+		# torch.manual_seed(seed)
+		# np.random.seed(seed)
 		global_epochs = ckpt['epoch']
 	else:
 		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, ae_config=ae_config, robot_vae_config=robot_vae_config)
@@ -251,8 +251,14 @@ if __name__=='__main__':
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
 		steps_done = (epoch+1)*iters
 		write_summaries_vae(writer, train_recon, train_kl, steps_done, 'train')
-		params = []
-		grads = []
+		for name, param in named_params:
+			if param.grad is None:
+				continue
+			writer.add_histogram('grads/'+name, param.grad.reshape(-1), steps_done)
+			writer.add_histogram('param/'+name, param.reshape(-1), steps_done)
+			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
+				print('zero grad for',name)
+		
 		model_h.eval()
 		model_r.eval()
 		with torch.no_grad():
@@ -272,13 +278,19 @@ if __name__=='__main__':
 					z_encoded.append(torch.concat([z_h, z_r], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm_np = pbd.HMM(nb_dim=nb_dim, nb_states=nb_states)
 				hsmm_np.init_hmm_kbins(z_encoded)
-				hsmm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
+				if args.variant == 3:
+					hsmm_np.em(z_encoded, reg=cov_reg.cpu().detach().numpy(), reg_finish=cov_reg.cpu().detach().numpy())
+				else:
+					hsmm_np.em(z_encoded, reg=cov_reg, reg_finish=cov_reg)
 				# hsmm_np.em(np.concatenate(z_encoded))
 
+				if args.variant == 3:
+					hsmm[a].reg = cov_reg.to(device).requires_grad_(False)
+				else:
+					hsmm[a].reg = torch.Tensor(hsmm_np.reg).to(device).requires_grad_(False)
 				hsmm[a].mu = torch.Tensor(hsmm_np.mu).to(device).requires_grad_(False)
 				hsmm[a].sigma = torch.Tensor(hsmm_np.sigma).to(device).requires_grad_(False)
 				hsmm[a].priors = torch.Tensor(hsmm_np.priors).to(device).requires_grad_(False)
-				hsmm[a].reg = torch.Tensor(hsmm_np.reg).to(device).requires_grad_(False)
 				hsmm[a].trans = torch.Tensor(hsmm_np.trans).to(device).requires_grad_(False)
 				hsmm[a].Trans = torch.Tensor(hsmm_np.Trans).to(device).requires_grad_(False)
 				hsmm[a].init_priors = torch.Tensor(hsmm_np.init_priors).to(device).requires_grad_(False)
@@ -288,18 +300,10 @@ if __name__=='__main__':
 				# hsmm[a].Mu_Pd = torch.Tensor(hsmm_np.Mu_Pd).to(device).requires_grad_(False)
 				# hsmm[a].Sigma_Pd = torch.Tensor(hsmm_np.Sigma_Pd).to(device).requires_grad_(False)
 				# hsmm[a].Trans_Pd = torch.Tensor(hsmm_np.Trans_Pd).to(device).requires_grad_(False)
-		for name, param in named_params:
-			if param.grad is None:
-				continue
-			writer.add_histogram('grads/'+name, param.grad.reshape(-1), steps_done)
-			writer.add_histogram('param/'+name, param.reshape(-1), steps_done)
-			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
-				print('zero grad for',name)
-		
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, hsmm, model_h, model_r, optimizer, args, epoch)
 			write_summaries_vae(writer, test_recon, test_kl, steps_done, 'test')
-
-		if epoch % 10 == 0:
+		
+		if (epoch+1) % 10 == 0:
 			checkpoint_file = os.path.join(MODELS_FOLDER, f'{epoch:04d}.pth')
 			torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'hsmm':hsmm}, checkpoint_file)
 		print(epoch,'epochs done')

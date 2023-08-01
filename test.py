@@ -6,9 +6,9 @@ import os, datetime, argparse
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-import networks
 import config
 from utils import *
+from vae import *
 import dataloaders
 
 import pbdlib as pbd
@@ -31,10 +31,10 @@ def evaluate_ckpt(ckpt_path, use_cov):
 
 	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
-	model_h = getattr(networks, args_ckpt.model)(**(ae_config.__dict__)).to(device)
+	model_h = VAE(**(ae_config.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
 	model_h.eval()
-	model_r = getattr(networks, args_ckpt.model)(**(robot_vae_config.__dict__)).to(device)
+	model_r = VAE(**(robot_vae_config.__dict__)).to(device)
 	model_r.load_state_dict(ckpt['model_r'])
 	model_r.eval()
 	hsmm = ckpt['hsmm']
@@ -79,48 +79,13 @@ if __name__=='__main__':
 	# torch.autograd.set_detect_anomaly(True)
 
 	for model_type, use_cov in [
-							# ('vae_vanilla', False),#, 'final.pth'),
-							# ('vae_vanilla_hsmm', False),#, 'final.pth'),
-							# ('vae_samplenocovcond', False),#, 'final.pth'),
-							# ('vae_samplecovcond', True),#, 'final.pth'),
-							# ('vae_nocovcondsampling', False),#, 'final.pth'),
-							# ('vae_covcondsampling', True),#, 'final.pth'),
-							# ('vae_nocovcond', False),#, 'final.pth'),
-							# ('vae_covcond', True),#, 'final.pth'),
-							# ('mild_vanilla', False),#, 'final.pth'),
-							# # ('mild_vanilla_hsmm', False),#, 'final.pth'),
-							# ('mild_samplenocovcond', False),#, 'final_250.pth'),
-							# ('mild_samplecovcond', True),#, 'final.pth'),
-							# ('mild_nocovcondsampling', False),#, 'final.pth'),
-							# ('mild_covcondsampling', True),#, 'final.pth'),
-							# # ('mild_nocovcond', False),#, 'final_250.pth'),
-							# # ('mild_covcond', True),#, 'final.pth'),
-							('v1_0/vanilla0', False),
-							('v1_0/vanilla1', False),
-							('v1_0/vanilla2', False),
-							('v1_0/vanilla3', False),
-							('v1_0/vanilla4', False),
-							('v1_0/vanilla5', False),
-							('v1_0/vanilla6', False),
-							('v1_0/vanilla7', False),
-							('v2_1/vanilla0', False),
-							('v2_1/vanilla1', False),
-							('v2_1/vanilla2', False),
-							('v2_1/vanilla3', False),
-							('v2_1/vanilla4', False),
-							('v2_1/vanilla5', False),
-							('v2_1/vanilla6', False),
-							('v2_1/vanilla7', False),
-							# ('v3_1/pretrain0', False),
-							# ('v3_1/pretrain1', False),
-							# ('v3_1/pretrain2', False),
-							# ('v3_1/pretrain3', False),
-							# ('v3_1/pretrain4', False),
-							# ('v3_1/pretrain5', False),
-							# ('v3_1/pretrain6', False),
-							# ('v3_1/pretrain7', False),
-							# ('v3_1/pretrain8', False),
-							# ('v3_1/pretrain9', False),
+							('v1_0', False),
+							('v2_1', False),
+							('v2_2', True),
+							('v3_1', False),
+							('v3_2', True),
+							('v4_1', False),
+							('v4_2', True),
 						]:
 		for ckpt_name in [
 							'final_100.pth', 
@@ -132,7 +97,7 @@ if __name__=='__main__':
 			vae_mse = []
 			for trial in range(4):
 				# ckpt_path = f'logs/2023/bp_pepper_downsampled_klweight/{model_type}/models/{ckpt_name}'
-				ckpt_path = f'logs/2023/bp_pepper_downsampled_robotfuture_ablation/z05/{model_type}/trial{trial}/models/{ckpt_name}'
+				ckpt_path = f'logs/2023/bp_pepper_downsampled_robotfuture_ablation/z05/{model_type}/vanilla/trial{trial}/models/{ckpt_name}'
 				pred_mse_ckpt, vae_mse_ckpt = evaluate_ckpt(ckpt_path, use_cov)
 				pred_mse += pred_mse_ckpt
 				vae_mse += vae_mse_ckpt
