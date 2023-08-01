@@ -10,7 +10,14 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["--results", "logs/2023/bp_pepper_staggeredhmm/z05/v3_1/no_pretrain0", "--latent-dim", "5", "--beta", "0.005", "--gamma", "1.00", "--pretrain", "0", "--variant", "1", "--grad-clip", "0.5", "--lr", "5e-4", "--optimizer", "AdamW"],
+            "args": [
+                        "--latent-dim", "5", 
+                        "--beta",       "0.005", 
+                        "--variant",    "4", 
+                        "--grad-clip",  "0.5", 
+                        "--lr",         "5e-4", 
+                        "--cov-reg",    "1e-4",
+                    ],
             "justMyCode": false
         }
     ]

@@ -63,7 +63,6 @@ class FullCovVAE(VAE):
 		super(FullCovVAE, self).__init__(**kwargs)
 		
 		self.post_cholesky = nn.Linear(self.enc_sizes[-1], (self.latent_dim*(self.latent_dim+1))//2)
-		self.z_prior = Normal(self.z_prior_mean, self.z_prior_std)
 		self.diag_idx = torch.arange(self.latent_dim)
 		self.tril_indices = torch.tril_indices(row=self.latent_dim, col=self.latent_dim, offset=0)
 
