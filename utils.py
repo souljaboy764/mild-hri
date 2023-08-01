@@ -15,39 +15,23 @@ def write_summaries_vae(writer, recon, kl, steps_done, prefix):
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
 
-def batchNearestPDCholesky(A, eps = torch.finfo(torch.float32).eps):
-	"""Find the nearest positive-definite matrix to input
-	A Python/Numpy port [1] of John D'Errico's `nearestSPD` MATLAB code [2], which
-	credits [3].
+def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps):
+	"""Find the nearest positive-definite matrix to input taken from [1] 
+	which is a A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [2], 
+	which credits [3].
 	[1] https://stackoverflow.com/questions/43238173/python-convert-matrix-to-positive-semi-definite/43244194#43244194
 	[2] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
 	[3] N.J. Higham, "Computing a nearest symmetric positive semidefinite matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
 
 	Modified as the input will always be symmetic (covariance matrix), therefore can go ahead with eigh from the beginning and no need to ensure symmetry
+	Additionally, to get potentially faster covergence, we use a similar approach as in https://github.com/LLNL/spdlayers of ensuring positive eigenvalues.
 	"""
 
-	# B = (A + torch.transpose(A,-2,-1))/2.
-	# _, s, V = torch.svd(B)
-	# sV = torch.bmm(torch.diag_embed(s),V)
-	# H = torch.bmm(torch.transpose(V,-2,-1),sV)
-
-	# A2 = (B + H) / 2
-
-	# A3 = (A2 + torch.transpose(A2,-2,-1)) / 2.
-	flag, L = batchIsPD(A)
-	if flag:
-		return L
-	
-
-	with torch.no_grad():
-		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
-
-	k = 1
-	eigvals, eigvecs = torch.linalg.eigh(A)
-	eigvals_matrix = torch.diag_embed(torch.abs(eigvals))
-	A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
-	A_ = A_ + I * (torch.abs(eigvals[:,0:1,None]) * k**2 + eps)
-	
+	try:
+		return torch.linalg.cholesky(A)
+	except:
+		pass
+	# A_ = A.clone().detach()
 	# The above is different from [1]. It appears that MATLAB's `chol` Cholesky
 	# decomposition will accept matrixes with exactly 0-eigenvalue, whereas
 	# torch will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
@@ -56,25 +40,26 @@ def batchNearestPDCholesky(A, eps = torch.finfo(torch.float32).eps):
 	# the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
 	# `spacing` will, for Gaussian random matrixes of small dimension, be on
 	# othe order of 1e-16. In practice, both ways converge
-	while not flag:
-		eigvals, eigvecs = torch.linalg.eigh(A)
-		eigvals_matrix = torch.diag_embed(torch.abs(eigvals))
-		A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
-		A_ = A_ + I * (torch.abs(eigvals[:,0:1,None]) * k**2 + eps)
-		k += 1
-		if k>20:
-			raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
-		flag, L = batchIsPD(A_)
-
-	return L
-
-def batchIsPD(B):
-	"""Returns true when input is positive-definite, via Cholesky"""
-	try:
-		L = torch.linalg.cholesky(B)
-		return True, L
-	except:
-		return False, None
+	with torch.no_grad():
+		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
+	A_ = A.detach().clone()
+	for k in range(1,31):
+		with torch.no_grad():
+			# eigvals, eigvecs = torch.linalg.eigh(A_)
+			# eigvals_matrix = torch.diag_embed(torch.nn.ReLU()(eigvals) + eps)
+			# A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
+			eigvals, eigvecs = torch.linalg.eigh(A_)
+			A_ = A_ + I * (torch.abs(eigvals[:,0]) * k**2 + eps)[:, None, None]
+		try:
+			return torch.linalg.cholesky(A_ + A - A.detach()) # keeping the same gradients as A but value of A_
+		except:
+			continue
+	for a in A:
+		try:
+			torch.linalg.cholesky(a)
+		except:
+			print(a, torch.linalg.cholesky_ex(a).L)
+	raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
 
 # joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
 # # joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
@@ -244,21 +229,17 @@ def training_argparse():
 						help='Window Size for inputs (default: 5)')
 	parser.add_argument('--downsample', type=float, default=0.2, metavar='DOWNSAMPLE',
 						help='Factor for downsampling the data (default: 0.2)')
-	parser.add_argument('--mce-samples', type=int, default=10, metavar='MCE',
-						help='Number of Monte Carlo samples to draw (default: 10)')
+	parser.add_argument('--mce-samples', type=int, default=4, metavar='MCE',
+						help='Number of Monte Carlo samples to draw (default: 4)')
 	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
 						help='Value to clip gradients at (default: 0.5)')
 	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
 						help='Number of epochs to train for (default: 100)')
+	parser.add_argument('--gamma', type=float, default=1.0, metavar='GAMMA',
+						help='Decay Factor to for the relative weight of the conditional loss  (default: 1.0)')
 	parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
 						help='Starting Learning Rate (default: 5e-4)')
-	parser.add_argument('--pretrain', type=int, default=0, metavar='PRETRAIN',
-						help='Number of epochs to pretrain for (default: 0)')
-	parser.add_argument('--gamma', type=float, default=1.0, metavar='GAMMA',
-						help='Starting Relative weight for decaying VAE vs conditional reconstruction (default: 1.0)')
-	parser.add_argument('--optimizer', type=str, default='AdamW', metavar='OPTIM', choices=['AdamW', 'Adam', 'Adagrad', 'RMSprop'],
-						help='Optimizer to use: AdamW, Adam, Adagrad or RMSprop (default: AdamW).')
-	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3],
+	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3, 4],
 						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
 	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
 						help='Checkpoint to resume training from (default: None)')
