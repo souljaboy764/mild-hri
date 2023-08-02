@@ -20,9 +20,9 @@ class HHDataset(Dataset):
 
 			for i in range(len(self.traj_data)):
 				seq_len, njoints, dims = self.traj_data[i].shape
-				self.traj_data[i] = self.traj_data[i][:, 1:, :] # Ignoring the first shoulder/body joint as it is almost static
-				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, (njoints-1)*3))
-				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints-1)*3))
+				self.traj_data[i] = self.traj_data[i][:, :, :] # Ignoring the first shoulder/body joint as it is almost static
+				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, (njoints)*3))
+				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints)*3))
 				if downsample < 1:
 					assert downsample != 0
 					self.traj_data[i] = downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device)[0, :, 0, :]
@@ -67,13 +67,13 @@ def window_concat(traj_data, window_length, pepper=False):
 			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
 			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
 		else:
-			# for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-			# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-			# 	trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
-			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-			trajs_concat.append(traj_data[i][:,:dim//2][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
-			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-			trajs_concat.append(traj_data[i][:,dim//2:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+			# idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+			# trajs_concat.append(traj_data[i][:,:dim//2][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
+			# idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+			# trajs_concat.append(traj_data[i][:,dim//2:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*dim//2)))
 
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)

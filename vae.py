@@ -23,6 +23,9 @@ class VAE(nn.Module):
 			enc_layers.append(self.activation)
 		self._encoder = nn.Sequential(*enc_layers)
 
+		# # Legacy from 2022. not used
+		# self.latent = nn.Linear(self.enc_sizes[-1], self.latent_dim)
+
 		self.post_mean = nn.Linear(self.enc_sizes[-1], self.latent_dim)
 		self.post_logstd = nn.Linear(self.enc_sizes[-1], self.latent_dim)
 		

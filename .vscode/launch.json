@@ -11,12 +11,14 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                        "--latent-dim", "5", 
+                        "--latent-dim", "3", 
+                        "--hsmm-components", "5",
                         "--beta",       "0.005", 
-                        "--variant",    "4", 
+                        "--variant",    "1", 
                         "--grad-clip",  "0.5", 
                         "--lr",         "5e-4", 
                         "--cov-reg",    "1e-4",
+                        "--dataset",    "buetepage",
                     ],
             "justMyCode": false
         }

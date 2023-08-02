@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.functional import grid_sample, affine_grid
 
-from transformations import *
+from transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
 
 def write_summaries_vae(writer, recon, kl, steps_done, prefix):
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
@@ -246,3 +246,92 @@ def training_argparse():
 	parser.add_argument('--cov-cond', action='store_true', 
 						help='Whether to use covariance for conditioning or not')
 	return parser.parse_args()
+
+
+def euler_matrix_torch(ai:torch.Tensor, aj:torch.Tensor, ak:torch.Tensor, axes='sxyz')->torch.Tensor:
+	"""Return homogeneous rotation matrix from Euler angles and axis sequence.
+
+	ai, aj, ak : Euler's roll, pitch and yaw angles
+	axes : One of 24 axis sequences as string or encoded tuple
+
+	>>> R = euler_matrix(1, 2, 3, 'syxz')
+	>>> numpy.allclose(numpy.sum(R[0]), -1.34786452)
+	True
+	>>> R = euler_matrix(1, 2, 3, (0, 1, 0, 1))
+	>>> numpy.allclose(numpy.sum(R[0]), -0.383436184)
+	True
+	>>> ai, aj, ak = (4.0*math.pi) * (numpy.random.random(3) - 0.5)
+	>>> for axes in _AXES2TUPLE.keys():
+	...    R = euler_matrix(ai, aj, ak, axes)
+	>>> for axes in _TUPLE2AXES.keys():
+	...    R = euler_matrix(ai, aj, ak, axes)
+
+	"""
+	try:
+		firstaxis, parity, repetition, frame = _AXES2TUPLE[axes]
+	except (AttributeError, KeyError):
+		_ = _TUPLE2AXES[axes]
+		firstaxis, parity, repetition, frame = axes
+
+	i = firstaxis
+	j = _NEXT_AXIS[i+parity]
+	k = _NEXT_AXIS[i-parity+1]
+
+	if frame:
+		ai, ak = ak, ai
+	if parity:
+		ai, aj, ak = -ai, -aj, -ak
+
+	si, sj, sk = torch.sin(ai), torch.sin(aj), torch.sin(ak)
+	ci, cj, ck = torch.cos(ai), torch.cos(aj), torch.cos(ak)
+	cc, cs = ci*ck, ci*sk
+	sc, ss = si*ck, si*sk
+	
+	batch_shape = ai.shape[0]
+	M = torch.eye(4, device=ai.device)[None].repeat((batch_shape, 1,1,))
+	if repetition:
+		M[:, i, i] = cj
+		M[:, i, j] = sj*si
+		M[:, i, k] = sj*ci
+		M[:, j, i] = sj*sk
+		M[:, j, j] = -cj*ss+cc
+		M[:, j, k] = -cj*cs-sc
+		M[:, k, i] = -sj*ck
+		M[:, k, j] = cj*sc+cs
+		M[:, k, k] = cj*cc-ss
+	else:
+		M[:, i, i] = cj*ck
+		M[:, i, j] = sj*sc-cs
+		M[:, i, k] = sj*cc+ss
+		M[:, j, i] = cj*sk
+		M[:, j, j] = sj*ss+cc
+		M[:, j, k] = sj*cs-sc
+		M[:, k, i] = -sj
+		M[:, k, j] = cj*si
+		M[:, k, k] = cj*ci
+	return M
+
+def PepperFK(q:torch.Tensor)->torch.Tensor:
+	# m00 = np.eye(4) # euler_matrix(0.05235987755982987, -0.0, 0.0) #base_link to right shoulder joint
+		
+	zeros = torch.zeros_like(q[:, 0])
+	ones = torch.ones_like(q[:, 0])
+	m01 = euler_matrix_torch(zeros, q[:, 0], zeros)
+	m01[:, :3,3] = torch.Tensor(np.array([-0.057, -0.14974, 0.08682]))
+
+	m12 = euler_matrix_torch(zeros, zeros, q[:, 1])
+	
+	m23 = euler_matrix_torch(q[:, 2], ones*-0.157079, zeros)
+	m23[:, :3,3] = torch.Tensor(np.array([0.1812, -0.015, 0.00013]))
+
+	m34 = euler_matrix_torch(zeros, zeros, q[:, 3])
+
+	m45 = torch.eye(4, device=q.device)[None].repeat((q.shape[0],1,1))
+	m45[:, 0,3] = 0.15
+	H = [m01,m12,m23,m34,m45]
+	T_endeff = H[0]
+	for i in range(1,len(H)):
+		T_endeff = T_endeff @ H[i]
+	
+	return T_endeff
+	

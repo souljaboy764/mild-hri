@@ -7,7 +7,7 @@ import os, datetime
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-from vae import VAE
+from vae import *
 import config
 from utils import *
 import dataloaders
@@ -100,6 +100,8 @@ def run_iteration(
 		if model_h.training:
 			if args.variant==1 or epoch==0:
 				recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean()
+				# for m in range(model_r.mce_samples+1):
+				# 	recon_loss = recon_loss + torch.norm(PepperFK(xr_gen[m].reshape(-1,4)) @ PepperFK(x_r.reshape(-1,4)).inverse() - torch.eye(4,device=device), dim=(-1,-2)).mean()
 			else:
 				if args.gamma==1:
 					recon_loss = ((xh_gen - x_h[None])**2).mean() + ((xr_gen - x_r[None])**2).mean() + ((xr_cond - x_r[None])**2).mean()
@@ -118,7 +120,7 @@ def run_iteration(
 	
 		loss = recon_loss
 
-		if args.beta!=0:
+		if args.beta!=0 and epoch!=0:
 			with torch.no_grad():
 				alpha_argmax = fwd_h.argmax(0)
 				zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, alpha_argmax], Sigma_prior[label][0, alpha_argmax])
@@ -262,6 +264,7 @@ if __name__=='__main__':
 		model_h.eval()
 		model_r.eval()
 		with torch.no_grad():
+			entropy = 0
 			# Updating Prior
 			for a in range(len(train_iterator.dataset.actidx)):
 				s = train_iterator.dataset.actidx[a]
@@ -277,12 +280,24 @@ if __name__=='__main__':
 					z_r = model_r(x_r, encode_only=True)
 					z_encoded.append(torch.concat([z_h, z_r], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
 				hsmm_np = pbd.HMM(nb_dim=nb_dim, nb_states=nb_states)
-				hsmm_np.init_hmm_kbins(z_encoded)
+				# hsmm_np.init_hmm_kbins(z_encoded)
+				hsmm_np.init_params_scikit(np.concatenate(z_encoded))
 				if args.variant == 3:
 					hsmm_np.em(z_encoded, reg=cov_reg.cpu().detach().numpy(), reg_finish=cov_reg.cpu().detach().numpy())
 				else:
 					hsmm_np.em(z_encoded, reg=cov_reg, reg_finish=cov_reg)
-				# hsmm_np.em(np.concatenate(z_encoded))
+				z_encoded = np.concatenate(z_encoded)
+				for zdim in range(args.latent_dim):
+					writer.add_histogram(f'z_h/{a}_{zdim}', z_encoded[:,zdim], steps_done)
+					writer.add_histogram(f'z_r/{a}_{zdim}', z_encoded[:,args.latent_dim+zdim], steps_done)
+				writer.add_image(f'hmm_{a}_trans', hsmm_np.Trans*255, steps_done, dataformats='HW')
+				alpha = np.zeros((nb_states*10, 100))
+				alpha_hsmm = hsmm_np.forward_variable(marginal=[], sample_size=100)
+				for n in range(nb_states):
+					alpha[n*10:(n+1)*10, :] = alpha_hsmm[n]
+				writer.add_image(f'hmm_{a}_alpha', alpha*255, steps_done, dataformats='HW')
+				
+				writer.add_histogram(f'alpha/{a}', alpha_hsmm.argmax(0), steps_done)
 
 				if args.variant == 3:
 					hsmm[a].reg = cov_reg.to(device).requires_grad_(False)
