@@ -52,7 +52,7 @@ class VAE(nn.Module):
 			zpost_samples = z_mean + eps*z_std
 			zpost_samples = torch.concat([zpost_samples, z_mean[None]], dim=0)
 		else:
-			zpost_samples = z_mean[None]
+			zpost_samples = z_mean
 		
 		x_gen = self._output(self._decoder(zpost_samples))
 		# return x_gen, zpost_samples, z_mean, torch.diag_embed(z_std**2)
@@ -89,7 +89,7 @@ class FullCovVAE(VAE):
 		if self.training:
 			zpost_samples = torch.concat([zpost_dist.rsample((self.mce_samples,)), z_mean[None]], dim=0)
 		else:
-			zpost_samples = z_mean[None]
+			zpost_samples = z_mean
 		
 		x_gen = self._output(self._decoder(zpost_samples))
 		return x_gen, zpost_samples, zpost_dist
