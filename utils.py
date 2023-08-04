@@ -11,6 +11,9 @@ from torch.nn.functional import grid_sample, affine_grid
 
 from transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
 
+import pbdlib as pbd
+import pbdlib_torch as pbd_torch
+
 def write_summaries_vae(writer, recon, kl, steps_done, prefix):
 	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
 	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
@@ -206,132 +209,99 @@ def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if
 		train_data[i] = train_data[i].transpose(2,0,1) # downsample_len, J, D
 	return np.array(train_data)
 
+def init_ssm_np(nb_dim, nb_states, ssm_type, NUM_ACTIONS):
+	ssm = []
+	for i in range(NUM_ACTIONS):
+		ssm_i = getattr(pbd, ssm_type)(nb_dim=nb_dim, nb_states=nb_states)
+		ssm_i.mu = np.zeros((nb_states, nb_dim))
+		ssm_i.sigma = np.tile(np.eye(nb_dim)[None],(nb_states,1,1))
+		if ssm_type!='GMM':
+			ssm_i.init_priors = np.ones((nb_states,))/nb_states
+			ssm_i.Trans = np.ones((nb_states, nb_states))/nb_states
+		else:
+			ssm_i.priors = np.ones((nb_states,))/nb_states
+		if ssm_type=='HSMM':
+			ssm_i.Mu_Pd = np.zeros(nb_states)
+			ssm_i.Sigma_Pd = np.ones(nb_states)
+			ssm_i.Trans_Pd = np.ones((nb_states, nb_states))/nb_states
+		ssm.append(ssm_i)
+	return ssm
+
+def init_ssm_torch(nb_dim, nb_states, ssm_type, NUM_ACTIONS, device):
+	ssm = []
+	for i in range(NUM_ACTIONS):
+		ssm_i = getattr(pbd_torch, ssm_type)(nb_dim=nb_dim, nb_states=nb_states)
+		ssm_i.mu = torch.zeros((nb_states, nb_dim), device=device)
+		ssm_i.sigma = torch.eye(nb_dim, device=device)[None].repeat(nb_states,1,1)
+		if ssm_type!='GMM':
+			ssm_i.init_priors = torch.ones((nb_states,), device=device)/nb_states
+			ssm_i.Trans = torch.ones((nb_states, nb_states), device=device)/nb_states
+		else:
+			ssm_i.priors = torch.ones((nb_states,), device=device)/nb_states
+		if ssm_type=='HSMM':
+			ssm_i.Mu_Pd = torch.zeros(nb_states, device=device)
+			ssm_i.Sigma_Pd = torch.ones(nb_states, device=device)
+			ssm_i.Trans_Pd = torch.ones((nb_states, nb_states), device=device)/nb_states
+		ssm.append(ssm_i)
+	return ssm
 
 def training_argparse():
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
+	# Results and Paths
 	parser.add_argument('--results', type=str, default='./logs/debug',#+datetime.datetime.now().strftime("%m%d%H%M"),
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--hsmm-components', type=int, default=5, metavar='N_COMPONENTS', 
-						help='Number of components to use in HSMM Prior (default: 5).')
 	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage', 'buetepage_pepper'],
 						help='Dataset to use: buetepage, buetepage_pepper or nuitrack (default: buetepage_pepper).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
-	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
-						help='Latent space dimension (default: 5)')
-	parser.add_argument('--cov-reg', type=float, default=1e-3, metavar='EPS',
-						help='Positive value to add to covariance diagonal (default: 1e-3)')
-	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
-						help='Scaling factor for KL divergence (default: 0.005)')
-	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
-						help='Window Size for inputs (default: 5)')
+	
+	# Input data shapers
 	parser.add_argument('--downsample', type=float, default=0.2, metavar='DOWNSAMPLE',
 						help='Factor for downsampling the data (default: 0.2)')
+	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
+						help='Window Size for inputs (default: 5)')
+	parser.add_argument('--num-joints', default=4, type=int,
+		     			help='Number of joints in the input data')
+	parser.add_argument('--joint-dims', default=3, type=int,
+		     			help='Number of Dimensions of each joint in the input data')
+	
+	# SSM args
+	parser.add_argument('--ssm', type=str, default='HMM', metavar='SSM', choices=['HMM', 'HSMM'],
+						help='Which State Space Model to use: HMM or HSMM (default: HMM).')
+	parser.add_argument('--ssm-components', type=int, default=5, metavar='N_COMPONENTS',
+						help='Number of components to use in SSM Prior (default: 5).')
+	parser.add_argument('--cov-reg', type=float, default=1e-3, metavar='EPS',
+						help='Positive value to add to covariance diagonal (default: 1e-3)')
+	
+	# VAE args
+	parser.add_argument('--model', type=str, default='VAE', metavar='MODEL', choices=['VAE', 'FullCovVAE'],
+						help='Which VAE to use: VAE or FullCovVAE (default: VAE).')
+	parser.add_argument('--latent-dim', type=int, default=5, metavar='Z',
+						help='Latent space dimension (default: 5)')
+	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3, 4],
+						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
+	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
+						help='Checkpoint to resume training from (default: None)')
+	parser.add_argument('--cov-cond', action='store_true',
+						help='Whether to use covariance for conditioning or not')
+	parser.add_argument('--hidden-sizes', default=[250,150], nargs='+', type=int,
+		     			help='List of weights for the VAE layers (default: [250,150] )')
+	parser.add_argument('--activation', default='LeakyReLU', type=str,
+		     			help='Activation Function for the VAE layers')
+	
+	# Hyperparameters
 	parser.add_argument('--mce-samples', type=int, default=4, metavar='MCE',
 						help='Number of Monte Carlo samples to draw (default: 4)')
 	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
 						help='Value to clip gradients at (default: 0.5)')
 	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
 						help='Number of epochs to train for (default: 100)')
-	parser.add_argument('--gamma', type=float, default=1.0, metavar='GAMMA',
-						help='Decay Factor to for the relative weight of the conditional loss  (default: 1.0)')
 	parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
 						help='Starting Learning Rate (default: 5e-4)')
-	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3, 4],
-						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
-	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
-						help='Checkpoint to resume training from (default: None)')
-	parser.add_argument('--cov-cond', action='store_true', 
-						help='Whether to use covariance for conditioning or not')
+	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
+						help='Scaling factor for KL divergence (default: 0.005)')
+
 	return parser.parse_args()
 
-
-def euler_matrix_torch(ai:torch.Tensor, aj:torch.Tensor, ak:torch.Tensor, axes='sxyz')->torch.Tensor:
-	"""Return homogeneous rotation matrix from Euler angles and axis sequence.
-
-	ai, aj, ak : Euler's roll, pitch and yaw angles
-	axes : One of 24 axis sequences as string or encoded tuple
-
-	>>> R = euler_matrix(1, 2, 3, 'syxz')
-	>>> numpy.allclose(numpy.sum(R[0]), -1.34786452)
-	True
-	>>> R = euler_matrix(1, 2, 3, (0, 1, 0, 1))
-	>>> numpy.allclose(numpy.sum(R[0]), -0.383436184)
-	True
-	>>> ai, aj, ak = (4.0*math.pi) * (numpy.random.random(3) - 0.5)
-	>>> for axes in _AXES2TUPLE.keys():
-	...    R = euler_matrix(ai, aj, ak, axes)
-	>>> for axes in _TUPLE2AXES.keys():
-	...    R = euler_matrix(ai, aj, ak, axes)
-
-	"""
-	try:
-		firstaxis, parity, repetition, frame = _AXES2TUPLE[axes]
-	except (AttributeError, KeyError):
-		_ = _TUPLE2AXES[axes]
-		firstaxis, parity, repetition, frame = axes
-
-	i = firstaxis
-	j = _NEXT_AXIS[i+parity]
-	k = _NEXT_AXIS[i-parity+1]
-
-	if frame:
-		ai, ak = ak, ai
-	if parity:
-		ai, aj, ak = -ai, -aj, -ak
-
-	si, sj, sk = torch.sin(ai), torch.sin(aj), torch.sin(ak)
-	ci, cj, ck = torch.cos(ai), torch.cos(aj), torch.cos(ak)
-	cc, cs = ci*ck, ci*sk
-	sc, ss = si*ck, si*sk
-	
-	batch_shape = ai.shape[0]
-	M = torch.eye(4, device=ai.device)[None].repeat((batch_shape, 1,1,))
-	if repetition:
-		M[:, i, i] = cj
-		M[:, i, j] = sj*si
-		M[:, i, k] = sj*ci
-		M[:, j, i] = sj*sk
-		M[:, j, j] = -cj*ss+cc
-		M[:, j, k] = -cj*cs-sc
-		M[:, k, i] = -sj*ck
-		M[:, k, j] = cj*sc+cs
-		M[:, k, k] = cj*cc-ss
-	else:
-		M[:, i, i] = cj*ck
-		M[:, i, j] = sj*sc-cs
-		M[:, i, k] = sj*cc+ss
-		M[:, j, i] = cj*sk
-		M[:, j, j] = sj*ss+cc
-		M[:, j, k] = sj*cs-sc
-		M[:, k, i] = -sj
-		M[:, k, j] = cj*si
-		M[:, k, k] = cj*ci
-	return M
-
-def PepperFK(q:torch.Tensor)->torch.Tensor:
-	# m00 = np.eye(4) # euler_matrix(0.05235987755982987, -0.0, 0.0) #base_link to right shoulder joint
-		
-	zeros = torch.zeros_like(q[:, 0])
-	ones = torch.ones_like(q[:, 0])
-	m01 = euler_matrix_torch(zeros, q[:, 0], zeros)
-	m01[:, :3,3] = torch.Tensor(np.array([-0.057, -0.14974, 0.08682]))
-
-	m12 = euler_matrix_torch(zeros, zeros, q[:, 1])
-	
-	m23 = euler_matrix_torch(q[:, 2], ones*-0.157079, zeros)
-	m23[:, :3,3] = torch.Tensor(np.array([0.1812, -0.015, 0.00013]))
-
-	m34 = euler_matrix_torch(zeros, zeros, q[:, 3])
-
-	m45 = torch.eye(4, device=q.device)[None].repeat((q.shape[0],1,1))
-	m45[:, 0,3] = 0.15
-	H = [m01,m12,m23,m34,m45]
-	T_endeff = H[0]
-	for i in range(1,len(H)):
-		T_endeff = T_endeff @ H[i]
-	
-	return T_endeff
-	
