@@ -23,8 +23,8 @@ class VAE(nn.Module):
 			enc_layers.append(self.activation)
 		self._encoder = nn.Sequential(*enc_layers)
 
-		# # Legacy from 2022. not used
-		# self.latent = nn.Linear(self.enc_sizes[-1], self.latent_dim)
+		# Legacy from 2022. not used
+		self.latent = nn.Linear(self.enc_sizes[-1], self.latent_dim)
 
 		self.post_mean = nn.Linear(self.enc_sizes[-1], self.latent_dim)
 		self.post_logstd = nn.Linear(self.enc_sizes[-1], self.latent_dim)
@@ -79,7 +79,7 @@ class FullCovVAE(VAE):
 		# Dorta et al. "Structured Uncertainty Prediction Networks" CVPR'18
 		# Dorta et al. "Training VAEs Under Structured Residuals" 2018
 		z_std = self.post_cholesky(enc)
-		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim), device=z_std.device)
+		z_chol = torch.zeros(z_std.shape[:-1]+(self.latent_dim, self.latent_dim), device=z_std.device, dtype=z_std.dtype)
 		z_chol[..., self.tril_indices[0], self.tril_indices[1]] = z_std
 		z_chol[..., self.diag_idx,self.diag_idx] = 2*torch.abs(z_chol[..., self.diag_idx,self.diag_idx]) + _eps
 		zpost_dist = MultivariateNormal(z_mean, scale_tril=z_chol)

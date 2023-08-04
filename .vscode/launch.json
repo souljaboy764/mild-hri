@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "args": [
                         "--latent-dim",     "3", 
-                        "--hsmm-components", "5",
+                        "--ssm-components", "5",
                         "--beta",           "0.005", 
                         "--variant",        "1", 
                         "--grad-clip",      "0.5", 
@@ -20,8 +20,10 @@
                         "--cov-reg",        "1e-4",
                         "--downsample",     "1",
                         "--window-size",    "40",
+                        "--downsample",     "0.4",
                         "--mce-samples",    "10",
                         "--dataset",        "buetepage",
+                        "--model",          "FullCovVAE",
                     ],
             "justMyCode": false
         }
