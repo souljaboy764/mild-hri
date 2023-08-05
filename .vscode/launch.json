@@ -20,10 +20,9 @@
                         "--cov-reg",        "1e-4",
                         "--downsample",     "1",
                         "--window-size",    "40",
-                        "--downsample",     "0.4",
                         "--mce-samples",    "10",
                         "--dataset",        "buetepage",
-                        "--model",          "FullCovVAE",
+                        "--model",          "VAE",
                     ],
             "justMyCode": false
         }

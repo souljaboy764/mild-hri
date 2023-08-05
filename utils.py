@@ -245,7 +245,7 @@ def init_ssm_torch(nb_dim, nb_states, ssm_type, NUM_ACTIONS, device):
 		ssm.append(ssm_i)
 	return ssm
 
-def training_argparse():
+def training_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
 	# Results and Paths
 	parser.add_argument('--results', type=str, default='./logs/debug',#+datetime.datetime.now().strftime("%m%d%H%M"),
@@ -303,5 +303,5 @@ def training_argparse():
 	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
 						help='Scaling factor for KL divergence (default: 0.005)')
 
-	return parser.parse_args()
+	return parser.parse_args(args)
 

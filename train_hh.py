@@ -43,10 +43,11 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 			if model.training:
 				recon_loss = F.mse_loss(x[None].repeat(args.mce_samples+1,1,1,1), x_gen, reduction='sum')
 			else:
-				z2_cond, _ = ssm[label].condition(zpost_samples[0], data_Sigma_in=None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
-				z1_cond, _ = ssm[label].condition(zpost_samples[1], data_Sigma_in=None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
-				x_gen = model._output(model._decoder(torch.concat([z1_cond[None], z2_cond[None]])))
 				recon_loss = F.mse_loss(x, x_gen, reduction='sum')
+				# z2_cond, _ = ssm[label].condition(zpost_samples[0], data_Sigma_in=None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim))
+				# z1_cond, _ = ssm[label].condition(zpost_samples[1], data_Sigma_in=None, dim_in=slice(z_dim, 2*z_dim), dim_out=slice(0, z_dim))
+				# x_gen = model._output(model._decoder(torch.concat([z1_cond[None], z2_cond[None]])))
+				# recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 			
 			if model.training and epoch!=0:	
 				with torch.no_grad():
@@ -204,11 +205,11 @@ if __name__=='__main__':
 
 		if epoch % 10 == 0:
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.4d.pth'%(epoch))
-			torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm}, checkpoint_file)
+			torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
 
 		print(epoch,'epochs done')
 
 	writer.flush()
 
 	checkpoint_file = os.path.join(MODELS_FOLDER, 'final.pth')
-	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_step, 'ssm':ssm}, checkpoint_file)
+	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': global_step, 'ssm':ssm, 'args':args}, checkpoint_file)
