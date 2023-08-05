@@ -6,10 +6,9 @@ import os, datetime, argparse
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-import config
-from utils import *
-from vae import *
-import dataloaders
+from mild_hri.utils import *
+from mild_hri.vae import *
+from mild_hri.dataloaders import *
 
 import pbdlib as pbd
 import pbdlib_torch as pbd_torch
@@ -24,9 +23,9 @@ def evaluate_ckpt(ckpt_path, use_cov):
 	ae_config = hyperparams['ae_config'].item()
 	robot_vae_config = hyperparams['robot_vae_config'].item()
 	if args_ckpt.dataset == 'buetepage_pepper':
-		dataset = dataloaders.buetepage.PepperWindowDataset
+		dataset = buetepage.PepperWindowDataset
 	elif args_ckpt.dataset == 'buetepage':
-		dataset = dataloaders.buetepage.HHWindowDataset
+		dataset = buetepage.HHWindowDataset
 	# TODO: Nuitrack
 
 	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)

@@ -7,9 +7,9 @@ import os, datetime
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-from vae import *
-from utils import *
-import dataloaders
+from mild_hri.vae import *
+from mild_hri.utils import *
+from mild_hri.dataloaders import buetepage
 
 import pbdlib as pbd
 import pbdlib_torch as pbd_torch
@@ -147,28 +147,20 @@ if __name__=='__main__':
 	torch.manual_seed(args.seed)
 	np.random.seed(args.seed)
 	torch.autograd.set_detect_anomaly(True)
-	
-	ae_config = config.buetepage.ae_config()
-	if args.dataset == 'buetepage_pepper':
-		robot_vae_config = config.buetepage.robot_vae_config()
-		robot_vae_config.num_joints = 4
-		dataset = dataloaders.buetepage.PepperWindowDataset
-	elif args.dataset == 'buetepage':
-		robot_vae_config = config.buetepage.ae_config()
-		dataset = dataloaders.buetepage.HHWindowDataset
-	# TODO: Nuitrack
 
-	robot_vae_config.latent_dim = ae_config.latent_dim = args.latent_dim
-	robot_vae_config.window_size = ae_config.window_size = args.window_size
-	robot_vae_config.mce_samples = ae_config.mce_samples = args.mce_samples
+	if args.dataset == 'buetepage_pepper':
+		dataset = buetepage.PepperWindowDataset
+	elif args.dataset == 'buetepage':
+		dataset = buetepage.HHWindowDataset
+	# TODO: Nuitrack
 
 	print("Reading Data")
 	train_iterator = DataLoader(dataset(args.src, train=True, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=True)
 	test_iterator = DataLoader(dataset(args.src, train=False, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=False)
 	print("Creating Model and Optimizer")
 
-	model_h = VAE(**(ae_config.__dict__)).to(device)
-	model_r = VAE(**(robot_vae_config.__dict__)).to(device)
+	model_h = VAE(**(args.__dict__)).to(device)
+	model_r = VAE(**(args.__dict__)).to(device)
 	params = list(model_h.parameters()) + list(model_r.parameters())
 	named_params = list(model_h.named_parameters()) + list(model_r.named_parameters())
 	optimizer = torch.optim.AdamW(params, lr=args.lr)
@@ -186,16 +178,6 @@ if __name__=='__main__':
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	print("Building Writer")
 	writer = SummaryWriter(SUMMARIES_FOLDER)
-	
-	s = ''
-	for k in ae_config.__dict__:
-		s += str(k) + ' : ' + str(ae_config.__dict__[k]) + '\n'
-	writer.add_text('human_ae_config', s)
-
-	s = ''
-	for k in robot_vae_config.__dict__:
-		s += str(k) + ' : ' + str(robot_vae_config.__dict__[k]) + '\n'
-	writer.add_text('robot_ae_config', s)
 
 	s = ''
 	for k in args.__dict__:
@@ -216,7 +198,7 @@ if __name__=='__main__':
 
 	hsmm = []
 	nb_dim = 2*args.latent_dim
-	nb_states = args.hsmm_components
+	nb_states = args.ssm_components
 	with torch.no_grad():
 		for i in range(NUM_ACTIONS):
 			hsmm_i = pbd_torch.HMM(nb_dim=nb_dim, nb_states=nb_states)
@@ -239,10 +221,6 @@ if __name__=='__main__':
 		# torch.manual_seed(seed)
 		# np.random.seed(seed)
 		global_epochs = ckpt['epoch']
-	else:
-		np.savez_compressed(os.path.join(MODELS_FOLDER,'hyperparams.npz'), args=args, ae_config=ae_config, robot_vae_config=robot_vae_config)
-		checkpoint_file = os.path.join(MODELS_FOLDER, 'init_ckpt.pth')
-		torch.save({'model_h': model_h.state_dict(), 'model_r': model_r.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': 0, 'hsmm':[]}, checkpoint_file)
 	
 	print("Starting Epochs")
 	epoch = global_epochs

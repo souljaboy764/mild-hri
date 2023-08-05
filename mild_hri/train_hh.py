@@ -7,9 +7,9 @@ import numpy as np
 import os, datetime, argparse
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-import vae
-from utils import *
-import dataloaders
+import mild_hri.vae
+from mild_hri.utils import *
+from mild_hri.dataloaders import buetepage
 
 import pbdlib as pbd
 
@@ -81,7 +81,7 @@ if __name__=='__main__':
 	assert args.dataset != 'buetepage_pepper'
 	
 	if args.dataset == 'buetepage':
-		dataset = dataloaders.buetepage.HHWindowDataset
+		dataset = buetepage.HHWindowDataset
 	# TODO: Nuitrack
 	
 	print("Reading Data")
@@ -96,7 +96,7 @@ if __name__=='__main__':
 	global_epochs = 0
 
 	print("Creating Model and Optimizer")
-	model = getattr(vae, args.model)(**(args.__dict__)).to(device)
+	model = getattr(mild_hri.vae, args.model)(**(args.__dict__)).to(device)
 	params = model.parameters()
 	named_params = model.named_parameters()
 	optimizer = torch.optim.AdamW(params, lr=args.lr, fused=True)

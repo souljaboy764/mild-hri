@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-from utils import *
+
+from mild_hri.utils import *
 
 class HHDataset(Dataset):
 	def __init__(self, datafile, train=True, downsample=1):

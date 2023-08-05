@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.functional import grid_sample, affine_grid
 
-from transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
+from mild_hri.transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
 
 import pbdlib as pbd
 import pbdlib_torch as pbd_torch

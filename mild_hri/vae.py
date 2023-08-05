@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.distributions import Normal, MultivariateNormal, kl_divergence
 
-from utils import *
+from mild_hri.utils import *
 
 _eps = 1e-8
 
