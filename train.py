@@ -8,7 +8,6 @@ import os, datetime
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 from vae import *
-import config
 from utils import *
 import dataloaders
 
