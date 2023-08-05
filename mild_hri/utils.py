@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 
@@ -244,6 +245,18 @@ def init_ssm_torch(nb_dim, nb_states, ssm_type, NUM_ACTIONS, device):
 			ssm_i.Trans_Pd = torch.ones((nb_states, nb_states), device=device)/nb_states
 		ssm.append(ssm_i)
 	return ssm
+
+# Thanks to https://stackoverflow.com/questions/45729092/make-interactive-matplotlib-window-not-pop-to-front-on-each-update-windows-7/45734500#45734500
+def mypause(interval):
+    backend = plt.rcParams['backend']
+    if backend in matplotlib.rcsetup.interactive_bk:
+        figManager = matplotlib._pylab_helpers.Gcf.get_active()
+        if figManager is not None:
+            canvas = figManager.canvas
+            if canvas.figure.stale:
+                canvas.draw()
+            canvas.start_event_loop(interval)
+            return
 
 def training_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
