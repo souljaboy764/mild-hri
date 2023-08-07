@@ -12,12 +12,11 @@ class HHDataset(Dataset):
 				self.traj_data = data['train_data']
 				self.labels = data['train_labels']
 				self.actidx = np.array([[0,24],[24,54],[54,110],[110,149]])
-				# self.actidx = np.array([[0,8],[8,16],[16,24],[24,32]]) # Human-robot trajs
+
 			else:
 				self.traj_data = data['test_data']
 				self.labels = data['test_labels']
 				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
-				# self.actidx = np.array([[0,2],[2,4],[4,6],[6,9]]) # Human-robot trajs
 
 			for i in range(len(self.traj_data)):
 				seq_len, njoints, dims = self.traj_data[i].shape
@@ -52,26 +51,6 @@ class PepperDataset(HHDataset):
 				traj_r.append(joints)
 			traj_r = np.array(traj_r) # seq_len, 4
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
-
-def window_concat(traj_data, window_length, pepper=False):
-	window_trajs = []
-	for i in range(len(traj_data)):
-		trajs_concat = []
-		traj_shape = traj_data[i].shape
-		dim = traj_shape[-1]
-		if pepper:
-			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-			trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
-			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
-		else:
-			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
-
-		trajs_concat = np.concatenate(trajs_concat,axis=-1)
-		window_trajs.append(trajs_concat)
-	return window_trajs
 
 class HHWindowDataset(Dataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):

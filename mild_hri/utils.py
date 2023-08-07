@@ -257,6 +257,26 @@ def mypause(interval):
                 canvas.draw()
             canvas.start_event_loop(interval)
             return
+	
+def window_concat(traj_data, window_length, pepper=False):
+	window_trajs = []
+	for i in range(len(traj_data)):
+		trajs_concat = []
+		traj_shape = traj_data[i].shape
+		dim = traj_shape[-1]
+		if pepper:
+			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+			trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
+			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
+		else:
+			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+
+		trajs_concat = np.concatenate(trajs_concat,axis=-1)
+		window_trajs.append(trajs_concat)
+	return window_trajs
 
 def training_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
@@ -265,8 +285,8 @@ def training_argparse(args=None):
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage', 'buetepage_pepper'],
-						help='Dataset to use: buetepage, buetepage_pepper or nuitrack (default: buetepage_pepper).')
+	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'buetepage_pepper', "nuisi"],
+						help='Dataset to use: buetepage, buetepage_pepper or nuisi (default: buetepage).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
 	
@@ -285,7 +305,7 @@ def training_argparse(args=None):
 						help='Which State Space Model to use: HMM or HSMM (default: HMM).')
 	parser.add_argument('--ssm-components', type=int, default=5, metavar='N_COMPONENTS',
 						help='Number of components to use in SSM Prior (default: 5).')
-	parser.add_argument('--cov-reg', type=float, default=1e-3, metavar='EPS',
+	parser.add_argument('--cov-reg', type=float, default=1e-2, metavar='EPS',
 						help='Positive value to add to covariance diagonal (default: 1e-3)')
 	
 	# VAE args
@@ -305,8 +325,8 @@ def training_argparse(args=None):
 		     			help='Activation Function for the VAE layers')
 	
 	# Hyperparameters
-	parser.add_argument('--mce-samples', type=int, default=4, metavar='MCE',
-						help='Number of Monte Carlo samples to draw (default: 4)')
+	parser.add_argument('--mce-samples', type=int, default=10, metavar='MCE',
+						help='Number of Monte Carlo samples to draw (default: 10)')
 	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
 						help='Value to clip gradients at (default: 0.5)')
 	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
