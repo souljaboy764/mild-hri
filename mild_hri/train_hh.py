@@ -24,7 +24,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 		with torch.no_grad():
 			for i in range(len(ssm)):
 				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,z_dim:]]))
-				Sigma_prior.append(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, z_dim:, z_dim:]]))
+				Sigma_prior.append(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, z_dim:, z_dim:]]) + ssm[i].reg[:z_dim, :z_dim])
 	for i, x in enumerate(iterator):
 		x, label = x
 		x = x[0]
@@ -66,6 +66,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 			else:
+				x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
 				recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 				# zr_cond = ssm[label].condition(zpost_samples[0], data_Sigma_in=None, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), return_cov=False)
 				# xr_gen = model._output(model._decoder(zr_cond))
@@ -231,7 +232,7 @@ if __name__=='__main__':
 				writer.add_image(f'hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
 				alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
 				writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
-			test_recon, test_kl, test_loss, x_gen, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args, epoch)
+			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args, epoch)
 			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
 
 		if epoch % 10 == 0:

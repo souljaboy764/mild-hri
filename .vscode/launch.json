@@ -14,7 +14,7 @@
                         "--latent-dim",     "3", 
                         "--ssm-components", "5",
                         "--beta",           "0.005", 
-                        "--variant",        "2", 
+                        "--variant",        "1", 
                         "--grad-clip",      "0.5", 
                         "--lr",             "5e-4", 
                         "--cov-reg",        "1e-2",
