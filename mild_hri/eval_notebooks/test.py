@@ -18,25 +18,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def evaluate_ckpt(ckpt_path, use_cov):
 	ckpt = torch.load(ckpt_path)
-	hyperparams = np.load(os.path.join(os.path.dirname(ckpt_path),'hyperparams.npz'), allow_pickle=True)
-	args_ckpt = hyperparams['args'].item()
-	ae_config = hyperparams['ae_config'].item()
-	robot_vae_config = hyperparams['robot_vae_config'].item()
+	args_ckpt = ckpt['args']
 	if args_ckpt.dataset == 'buetepage_pepper':
 		dataset = buetepage.PepperWindowDataset
 	elif args_ckpt.dataset == 'buetepage':
 		dataset = buetepage.HHWindowDataset
 	# TODO: Nuitrack
+	
+	test_iterator = DataLoader(dataset('../../'+args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
-	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
-
-	model_h = VAE(**(ae_config.__dict__)).to(device)
-	model_h.load_state_dict(ckpt['model_h'])
-	model_h.eval()
-	model_r = VAE(**(robot_vae_config.__dict__)).to(device)
-	model_r.load_state_dict(ckpt['model_r'])
-	model_r.eval()
-	hsmm = ckpt['hsmm']
+	model = VAE(**(args_ckpt.__dict__)).to(device)
+	model.load_state_dict(ckpt['model'])
+	model.eval()
+	ssm = ckpt['ssm']
 
 	pred_mse = []
 	vae_mse = []
@@ -48,24 +42,24 @@ def evaluate_ckpt(ckpt_path, use_cov):
 			x = x[0]
 			label = label[0]
 			x = torch.Tensor(x).to(device)
-			x_h = x[:, :model_h.input_dim]
-			x_r = x[:, model_h.input_dim:]
-			z_dim = hsmm[label].nb_dim//2
+			x_h = x[:, :model.input_dim]
+			x_r = x[:, model.input_dim:]
+			z_dim = args_ckpt.latent_dim
 			
-			zh_post = model_h(x_h, dist_only=True)
-			xr_gen, _, _ = model_r(x_r)
+			zh_post = model(x_h, dist_only=True)
+			xr_gen, _, _ = model(x_r)
 			if use_cov:
 				data_Sigma_in = zh_post.covariance_matrix
 			else: 
 				data_Sigma_in = None
-			zr_cond = hsmm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
+			zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
 											data_Sigma_in=data_Sigma_in,
 											return_cov=False) 
-			xr_cond = model_r._output(model_r._decoder(zr_cond))
+			xr_cond = model._output(model._decoder(zr_cond))
 			# pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints)).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 			# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints)).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], args_ckpt.window_size, args_ckpt.num_joints, args_ckpt.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], args_ckpt.window_size, args_ckpt.num_joints, args_ckpt.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 
 	return pred_mse, vae_mse
 
