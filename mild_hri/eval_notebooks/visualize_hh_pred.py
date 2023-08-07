@@ -28,14 +28,15 @@ model.load_state_dict(ckpt['model'])
 model.eval()
 z_dim = model.latent_dim
 
-# if args_ckpt.dataset == 'buetepage_pepper':
-# 	dataset = dataloaders.buetepage.PepperWindowDataset
-# elif args_ckpt.dataset == 'buetepage':
-dataset = buetepage.HHWindowDataset
+if args_ckpt.dataset == 'buetepage':
+	dataset = buetepage.HHWindowDataset
+	actions = ['Hand Wave', 'Hand Shake', 'Rocket Fistbump', 'Parachute Fistbump']
+elif args_ckpt.dataset == 'nuisi':
+	dataset = nuisi.HHWindowDataset
+	actions = ['clapfist2', 'fistbump2', 'handshake2', 'highfive1', 'rocket1', 'wave1']
 # TODO: Nuitrack
 
-test_dataset = dataset(os.path.join('../../',args_ckpt.src), train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample)
-actions = ['Hand Wave', 'Hand Shake', 'Rocket Fistbump', 'Parachute Fistbump']
+test_dataset = dataset(os.path.join(args_ckpt.src), train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample)
 
 fig = plt.figure()
 spec = fig.add_gridspec(2, 2)
@@ -46,7 +47,7 @@ ax_alpha = fig.add_subplot(spec[1,:])
 plt.show(block=False)
 actidx = np.hstack(test_dataset.actidx - np.array([0,1]))
 
-for a in actidx[2::2]:
+for a in actidx[::2]:
 	x, label = test_dataset[a]
 	seq_len = x.shape[0]
 	dims_h = model.input_dim
@@ -117,7 +118,7 @@ for a in actidx[2::2]:
 		ax_latent.scatter3D(z_r[i, 0], z_r[i, 1], z_r[i, 2], c='b')
 		ax_latent.scatter3D(zh_cond[i, 0], zh_cond[i, 1], zh_cond[i, 2], c='m')
 		ax_latent.scatter3D(zr_cond[i, 0], zr_cond[i, 1], zr_cond[i, 2], c='c')
-		mypause(0.001)
+		mypause(0.01)
 		if not plt.fignum_exists(fig.number):
 			break
 	if not plt.fignum_exists(fig.number):
