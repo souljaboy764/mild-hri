@@ -278,15 +278,15 @@ def window_concat(traj_data, window_length, pepper=False):
 		window_trajs.append(trajs_concat)
 	return window_trajs
 
-def training_argparse(args=None):
+def training_hh_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
 	# Results and Paths
 	parser.add_argument('--results', type=str, default='./logs/debug',#+datetime.datetime.now().strftime("%m%d%H%M"),
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', 'buetepage_pepper', "nuisi"],
-						help='Dataset to use: buetepage, buetepage_pepper or nuisi (default: buetepage).')
+	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', "nuisi"],
+						help='Dataset to use: buetepage or nuisi (default: buetepage).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
 	
@@ -324,6 +324,48 @@ def training_argparse(args=None):
 	parser.add_argument('--activation', default='LeakyReLU', type=str,
 		     			help='Activation Function for the VAE layers')
 	
+	# Hyperparameters
+	parser.add_argument('--mce-samples', type=int, default=10, metavar='MCE',
+						help='Number of Monte Carlo samples to draw (default: 10)')
+	parser.add_argument('--grad-clip', type=float, default=0.5, metavar='CLIP',
+						help='Value to clip gradients at (default: 0.5)')
+	parser.add_argument('--epochs', type=int, default=100, metavar='EPOCHS',
+						help='Number of epochs to train for (default: 100)')
+	parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
+						help='Starting Learning Rate (default: 5e-4)')
+	parser.add_argument('--beta', type=float, default=0.005, metavar='BETA',
+						help='Scaling factor for KL divergence (default: 0.005)')
+
+	return parser.parse_args(args)
+
+def training_hr_argparse(args=None):
+	parser = argparse.ArgumentParser(description='HSMM VAE Training')
+	# Results and Paths
+	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
+						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
+	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage_yumi', 'buetepage_pepper', "nuisi_pepper"],
+						help='Dataset to use: buetepage_yumi, buetepage_pepper or nuisi_pepper (default: buetepage_pepper).')
+	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
+						help='Random seed for training (randomized by default).')
+	
+	# Input data shapers
+	parser.add_argument('--downsample', type=float, default=0.2, metavar='DOWNSAMPLE',
+						help='Factor for downsampling the data (default: 0.2)')
+	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
+						help='Window Size for inputs (default: 5)')
+	parser.add_argument('--num-joints', default=4, type=int,
+		     			help='Number of joints in the input data')
+
+	# VAE args
+	parser.add_argument('--variant', type=int, default=2, metavar='VARIANT', choices=[1, 2, 3, 4],
+						help='Which variant to use 1 - vanilla, 2 - sample conditioning, 3 - conditional sampling (default: 1).')
+	parser.add_argument('--ckpt', type=str, default=None, metavar='CKPT',
+						help='Checkpoint to resume training from (default: None)')
+	parser.add_argument('--ckpt-h', type=str, default=None, metavar='CKPT', required=True,
+						help='Checkpoint to the human VAE (default: None)')
+	parser.add_argument('--cov-cond', action='store_true',
+						help='Whether to use covariance for conditioning or not')
+
 	# Hyperparameters
 	parser.add_argument('--mce-samples', type=int, default=10, metavar='MCE',
 						help='Number of Monte Carlo samples to draw (default: 10)')

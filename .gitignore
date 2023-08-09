@@ -157,3 +157,4 @@ logs*
 data/
 *.npz
 train.sh
+.vscode/
