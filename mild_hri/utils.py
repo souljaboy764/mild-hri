@@ -9,8 +9,12 @@ import argparse
 import torch
 import torch.nn.functional as F
 from torch.nn.functional import grid_sample, affine_grid
+from torch.utils.data import DataLoader
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from mild_hri.transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
+from mild_hri.dataloaders import buetepage, nuisi
+from mild_hri.vae import VAE
 
 import pbdlib as pbd
 import pbdlib_torch as pbd_torch
@@ -277,6 +281,75 @@ def window_concat(traj_data, window_length, pepper=False):
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)
 	return window_trajs
+
+def evaluate_ckpt_hh(ckpt_path):
+	ckpt = torch.load(ckpt_path)
+	args_ckpt = ckpt['args']
+	if args_ckpt.dataset == 'buetepage':
+		dataset = buetepage.HHWindowDataset
+	if args_ckpt.dataset == 'nuisi':
+		dataset = nuisi.HHWindowDataset
+	
+	test_iterator = DataLoader(dataset('../'+args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
+
+	model = VAE(**(args_ckpt.__dict__)).to(device)
+	model.load_state_dict(ckpt['model'])
+	model.eval()
+	ssm = ckpt['ssm']
+
+	return evaluate_ckpt(model, model, ssm, args_ckpt.cov_cond, test_iterator)
+
+def evaluate_ckpt_hr(ckpt_path):
+	ckpt = torch.load(ckpt_path)
+	args_h = ckpt['args_h']
+	args_r = ckpt['args_r']
+	if args_r.dataset == 'buetepage_pepper':
+		dataset = buetepage.PepperWindowDataset
+	# TODO: BP_Yumi, Nuisi_Pepper
+	
+	test_iterator = DataLoader(dataset('../'+args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
+
+	model_h = VAE(**(args_h.__dict__)).to(device)
+	model_h.load_state_dict(ckpt['model_h'])
+	model_r = VAE(**{**(args_h.__dict__), **(args_r.__dict__)}).to(device)
+	model_r.load_state_dict(ckpt['model_r'])
+	
+	model_h.eval()
+	model_r.eval()
+	ssm = ckpt['ssm']
+
+	return evaluate_ckpt(model_h, model_r, ssm, args_r.cov_cond, test_iterator)
+
+def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
+	pred_mse = []
+	vae_mse = []
+	with torch.no_grad():
+		for i, x in enumerate(test_iterator):
+			# if i<7:
+			# 	continue
+			x, label = x
+			x = x[0]
+			label = label[0]
+			x = torch.Tensor(x).to(device)
+			x_h = x[:, :model_h.input_dim]
+			x_r = x[:, model_h.input_dim:]
+			z_dim = model_h.latent_dim
+			
+			zh_post = model_h(x_h, dist_only=True)
+			xr_gen, _, _ = model_r(x_r)
+			if use_cov:
+				data_Sigma_in = zh_post.covariance_matrix
+			else: 
+				data_Sigma_in = None
+			zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
+											data_Sigma_in=data_Sigma_in,
+											return_cov=False) 
+			xr_cond = model_r._output(model_r._decoder(zr_cond))
+			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+
+	return pred_mse, vae_mse
+
 
 def training_hh_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
