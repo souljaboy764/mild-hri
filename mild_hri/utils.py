@@ -341,6 +341,8 @@ def training_hh_argparse(args=None):
 def training_hr_argparse(args=None):
 	parser = argparse.ArgumentParser(description='HSMM VAE Training')
 	# Results and Paths
+	parser.add_argument('--results', type=str, default='./logs/debug',#+datetime.datetime.now().strftime("%m%d%H%M"),
+						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
 	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage_yumi', 'buetepage_pepper', "nuisi_pepper"],
