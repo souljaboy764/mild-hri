@@ -134,6 +134,7 @@ if __name__=='__main__':
 	print("Creating Model and Optimizer")
 	ssm = ckpt_h['ssm']
 	model_h = getattr(mild_hri.vae, args_h.model)(**(args_h.__dict__)).to(device)
+	model_h.load_state_dict(ckpt_h['model'])
 	model_r = getattr(mild_hri.vae, args_h.model)(**{**(args_h.__dict__), **(args_r.__dict__)}).to(device)
 	params = model_r.parameters()
 	named_params = model_r.named_parameters()
@@ -190,47 +191,6 @@ if __name__=='__main__':
 		
 		model_r.eval()
 		with torch.no_grad():
-			# # Updating Prior
-			# for a in range(len(train_iterator.dataset.actidx)):
-			# 	s = train_iterator.dataset.actidx[a]
-			# 	z_encoded = []
-			# 	lens = []
-			# 	for j in range(s[0], s[1]):
-			# 	# for j in np.random.randint(s[0], s[1], 12):
-			# 		x, label = train_iterator.dataset[j]
-			# 		assert np.all(label == a)
-			# 		x = torch.Tensor(x).to(device)
-			# 		seq_len, dims = x.shape
-			# 		lens.append(seq_len)
-			# 		x_h = x[:, :model_h.input_dim]
-			# 		x_r = x[:, model_h.input_dim:]
-					
-			# 		zh = model_h(x_h, encode_only=True)
-			# 		zr = model_r(x_r, encode_only=True)
-			# 		z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-			# 	ssm_np = getattr(pbd, args_h.ssm)(nb_dim=2*args_h.latent_dim, nb_states=args_h.ssm_components)
-			# 	ssm_np.init_hmm_kbins(z_encoded)
-			# 	ssm_np.em(z_encoded, reg=args_h.cov_reg, reg_finish=args_h.cov_reg)
-			# 	# ssm[a].init_hmm_kbins(z_encoded)
-			# 	# ssm[a].em(z_encoded)
-			# 	for k in vars(ssm_np).keys():
-			# 		if isinstance(ssm_np.__getattribute__(k), np.ndarray):
-			# 			ssm[a].__setattr__(k, torch.Tensor(ssm_np.__getattribute__(k)).to(device).requires_grad_(False))
-			# 		else:
-			# 			ssm[a].__setattr__(k, ssm_np.__getattribute__(k))
-			# 	if args_h.variant == 3:
-			# 		ssm[a].reg = cov_reg.to(device).requires_grad_(False)
-			# 	# else:
-			# 	# 	ssm[a].reg = torch.Tensor(ssm_np.reg).to(device).requires_grad_(False)
-
-			# 	# z_encoded = torch.concat(z_encoded)
-			# 	z_encoded = np.concatenate(z_encoded)
-			# 	for zdim in range(args_h.latent_dim):
-			# 		writer.add_histogram(f'train_hr/z_h/{a}_{zdim}', z_encoded[:,zdim], epoch)
-			# 		writer.add_histogram(f'train_hr/z_r/{a}_{zdim}', z_encoded[:,args_h.latent_dim+zdim], epoch)
-			# 	writer.add_image(f'train_hr/hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
-			# 	alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
-			# 	writer.add_histogram(f'train_hr/alpha/{a}', alpha_ssm.argmax(0), epoch)
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
 			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test_r')
 
