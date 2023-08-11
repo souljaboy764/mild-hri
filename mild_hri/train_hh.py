@@ -60,7 +60,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 
 					zr_cond_mean = torch.concat(zr_cond_mean)
 					xr_cond = model._output(model._decoder(zr_cond_mean))
-					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
+					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
 				
 				if args.variant == 3 or args.variant == 4:
 					# Conditional Sampling: Conditioning the HMM with the Posterior and Sampling from this Conditional distribution
@@ -75,7 +75,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 
 					zr_cond_samples = torch.concat([zr_cond_samples, zr_cond_mean[None]])
 					xr_cond = model._output(model._decoder(zr_cond_samples))
-					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
+					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
 				
 			else:
 				# x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
@@ -173,7 +173,7 @@ if __name__=='__main__':
 		# model.load_state_dict(ckpt['model'])
 		optimizer.load_state_dict(ckpt['optimizer'])
 		ssm = ckpt['ssm']
-		# global_epochs = ckpt['epoch']
+		global_epochs = ckpt['epoch']
 
 	print("Starting Epochs")
 	ssm = init_ssm_torch(2*args.latent_dim, args.ssm_components, args.ssm, NUM_ACTIONS, device)
