@@ -52,14 +52,13 @@ def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps)
 		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
 	A_ = A.detach().clone()
 	for k in range(1,31):
-		with torch.no_grad():
-			# eigvals, eigvecs = torch.linalg.eigh(A_)
-			# eigvals_matrix = torch.diag_embed(torch.nn.ReLU()(eigvals) + eps)
-			# A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
-			eigvals, eigvecs = torch.linalg.eigh(A_)
-			A_ = A_ + I * (torch.abs(eigvals[:,0]) * k**2 + eps)[:, None, None]
+		# eigvals, eigvecs = torch.linalg.eigh(A_)
+		# eigvals_matrix = torch.diag_embed(torch.nn.ReLU()(eigvals) + eps)
+		# A_ = eigvecs @ eigvals_matrix @ eigvecs.transpose(-1,-2)
+		eigvals, eigvecs = torch.linalg.eigh(A_)
+		A_ = A_ + I * (torch.abs(eigvals[:,0]) * k**2 + eps)[:, None, None]
 		try:
-			return torch.linalg.cholesky(A_ + A - A.detach()) # keeping the same gradients as A but value of A_
+			return torch.linalg.cholesky(A_)# + A - A.detach()) # keeping the same gradients as A but value of A_
 		except:
 			continue
 	for a in A:
@@ -112,27 +111,18 @@ def rotation_normalization(skeleton):
 					 [yAxis[0], yAxis[1], yAxis[2]],
 					 [zAxis[0], zAxis[1], zAxis[2]]])
 
-def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
-	
-	rightShoulder = skeleton[1]
-	rightElbow = skeleton[2]
-	rightHand = skeleton[3]
-	
-	rightYaw = 0
-	rightPitch = 0
-	rightRoll = 0
-	rightElbowAngle = 0
-	
+def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF, with the limits
 	# Recreating arm with upper and under arm
-	rightUpperArm = rightElbow - rightShoulder
-	rightUnderArm = rightHand - rightElbow
+	rightUpperArm = skeleton[2] - skeleton[1]
+	rightUnderArm = skeleton[3] - skeleton[2]
 
-	rightElbowAngle = angle(rightUpperArm, rightUnderArm)
 
-	rightYaw = np.arctan2(rightUpperArm[1],-rightUpperArm[2]) # Comes from robot structure
-	# rightYaw -= 0.009
-	rightPitch = np.arctan2(max(rightUpperArm[0],0), rightUpperArm[2]) # Comes from robot structure
-	rightPitch -= np.pi/2 # for pepper frame
+	rightElbowAngle = np.clip(angle(rightUpperArm, rightUnderArm), 0.0087, 1.562)
+	
+	rightYaw = np.clip(np.arcsin(min(rightUpperArm[1],-0.0087)/np.linalg.norm(rightUpperArm)), -1.562, -0.0087)
+	
+	rightPitch = np.arctan2(max(rightUpperArm[0],0), rightUpperArm[2])
+	rightPitch -= np.pi/2 # Needed for pepper frame
 	
 	# Recreating under Arm Position with known Angles(without roll)
 	rightRotationAroundY = euler_matrix(0, rightPitch, 0,)[:3,:3]
@@ -144,18 +134,6 @@ def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 
 	# Calculating the angle betwenn actual under arm position and the one calculated without roll
 	rightRoll = angle(rightUnderArmWithoutRoll, rightUnderArm)
-	
-	# # This is a check which sign the angle has as the calculation only produces positive angles
-	# rightRotationAroundArm = euler_matrix(0, 0, -rightRoll)[:3, :3]
-	# rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
-	# r1saver = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
-	
-	# rightRotationAroundArm = euler_matrix(0, 0, rightRoll)[:3, :3]
-	# rightShouldBeWristPos = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightRotationAroundArm,np.dot(rightElbowRotation,rightUnderArmInZeroPos))))
-	# r1 = np.linalg.norm(rightUnderArm - rightShouldBeWristPos)
-	
-	# if (r1 > r1saver):
-	# 	rightRoll = -rightRoll
 
 	return np.array([rightPitch, rightYaw, rightRoll, rightElbowAngle])
 
@@ -194,8 +172,6 @@ def visualize_skeleton(ax, trajectory, **kwargs):
 		ax.plot(trajectory[w, :, 0], trajectory[w, :, 1], trajectory[w, :, 2], color='k', marker='o', **kwargs)
 	
 	return ax
-
-
 
 def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
 	# train_data shape: seq_len, J, D : J - num joints, D - dimensions
