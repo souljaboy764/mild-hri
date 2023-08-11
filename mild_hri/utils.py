@@ -114,9 +114,9 @@ def rotation_normalization(skeleton):
 
 def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF
 	
-	rightShoulder = skeleton[0]
-	rightElbow = skeleton[1]
-	rightHand = skeleton[2]
+	rightShoulder = skeleton[1]
+	rightElbow = skeleton[2]
+	rightHand = skeleton[3]
 	
 	rightYaw = 0
 	rightPitch = 0
