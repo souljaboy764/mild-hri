@@ -300,6 +300,10 @@ def evaluate_ckpt_hr(ckpt_path):
 def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 	pred_mse = []
 	vae_mse = []
+
+	x_in = []
+	x_vae = []
+	x_cond = []
 	with torch.no_grad():
 		for i, x in enumerate(test_iterator):
 			# if i<7:
@@ -307,6 +311,7 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 			x, label = x
 			x = x[0]
 			label = label[0]
+			x_in.append(x.cpu().numpy())
 			x = torch.Tensor(x).to(device)
 			x_h = x[:, :model_h.input_dim]
 			x_r = x[:, model_h.input_dim:]
@@ -314,6 +319,7 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 			
 			zh_post = model_h(x_h, dist_only=True)
 			xr_gen, _, _ = model_r(x_r)
+			x_vae.append(xr_gen.cpu().numpy())
 			if use_cov:
 				data_Sigma_in = zh_post.covariance_matrix
 			else: 
@@ -322,9 +328,16 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 											data_Sigma_in=data_Sigma_in,
 											return_cov=False) 
 			xr_cond = model_r._output(model_r._decoder(zr_cond))
+			x_cond.append(xr_cond.cpu().numpy())
+			
 			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+	x_in = np.array(x_in,dtype=object)
+	x_cond = np.array(x_cond,dtype=object)
+	x_vae = np.array(x_vae,dtype=object)
 
+	np.savez_compressed('x_test_cond.npz', x_in=x_in, x_cond=x_cond, x_vae=x_vae)
+	
 	return pred_mse, vae_mse
 
 
