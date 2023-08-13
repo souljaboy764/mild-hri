@@ -92,7 +92,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 				seq_alpha = alpha_argmax_prior[label][:seq_len]
 				with torch.no_grad():
 					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
-				reg_loss = torch.distributions.kl_divergence(zr_post, zr_prior).mean()
+				reg_loss = torch.distributions.kl_divergence(zr_post, zr_prior).sum()
 				total_reg.append(reg_loss)
 				loss = recon_loss + args.beta*reg_loss
 			else:
@@ -142,6 +142,15 @@ if __name__=='__main__':
 
 	MODELS_FOLDER = os.path.join(args_r.results, "models")
 	SUMMARIES_FOLDER = os.path.join(args_r.results, "summary")
+	if not os.path.exists(args_r.results):
+		print("Creating Result Directory")
+		os.makedirs(args_r.results)
+	if not os.path.exists(MODELS_FOLDER):
+		print("Creating Model Directory")
+		os.makedirs(MODELS_FOLDER)
+	if not os.path.exists(SUMMARIES_FOLDER):
+		print("Creating Model Directory")
+		os.makedirs(SUMMARIES_FOLDER)
 	global_step = 0
 	global_epochs = 0
 
@@ -177,7 +186,7 @@ if __name__=='__main__':
 	for epoch in range(global_epochs, args_r.epochs):
 		model_r.train()
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
-		write_summaries_vae(writer, train_recon, train_kl, epoch, 'train_r')
+		write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
 		params = []
 		grads = []
 		
@@ -192,15 +201,15 @@ if __name__=='__main__':
 		model_r.eval()
 		with torch.no_grad():
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
-			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test_r')
+			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
 
 		if epoch % 10 == 0:
-			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d_r.pth'%(epoch))
+			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d.pth'%(epoch))
 			torch.save({'model_r': model_r.state_dict(), 'model_h': model_h.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'args_r':args_r, 'args_h':args_h, 'ssm':ssm}, checkpoint_file)
 
 		print(epoch,'epochs done')
 
 	writer.flush()
 
-	checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch}_r.pth')
+	checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch}.pth')
 	torch.save({'model_r': model_r.state_dict(), 'model_h': model_h.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'args_r':args_r, 'args_h':args_h, 'ssm':ssm}, checkpoint_file)

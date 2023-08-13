@@ -50,7 +50,8 @@ def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps)
 	# othe order of 1e-16. In practice, both ways converge
 	with torch.no_grad():
 		I = torch.eye(A.shape[-1]).repeat(A.shape[0],1,1).to(A.device)
-	A_ = A.detach().clone()
+	dtype = A.dtype
+	A_ = A.detach().clone().to(torch.float32)
 	for k in range(1,31):
 		# eigvals, eigvecs = torch.linalg.eigh(A_)
 		# eigvals_matrix = torch.diag_embed(torch.nn.ReLU()(eigvals) + eps)
@@ -58,10 +59,10 @@ def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps)
 		eigvals, eigvecs = torch.linalg.eigh(A_)
 		A_ = A_ + I * (torch.abs(eigvals[:,0]) * k**2 + eps)[:, None, None]
 		try:
-			return torch.linalg.cholesky(A_)# + A - A.detach()) # keeping the same gradients as A but value of A_
+			return torch.linalg.cholesky(A_).to(dtype)# + A - A.detach()) # keeping the same gradients as A but value of A_
 		except:
 			continue
-	for a in A:
+	for a in A.to(torch.float32):
 		try:
 			torch.linalg.cholesky(a)
 		except:

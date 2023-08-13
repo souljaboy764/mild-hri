@@ -3,6 +3,5 @@ numpy
 matplotlib
 tensorboard
 torch-tb-profiler
-future
-joblib
-pytorch-adapt
+plotly
+

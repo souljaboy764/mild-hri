@@ -33,7 +33,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 		x = torch.Tensor(x).to(device)
 		seq_len, dims = x.shape
 		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # (2, seq_len, dims) x[0] = Agent 1, x[1] = Agent 2
-		
+
 		if model.training:
 			optimizer.zero_grad()
 
@@ -50,6 +50,8 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 				x_gen = torch.concat([xh_gen[:, None], xr_gen[:, None]], dim=1) # (mce_samples, 2, seq_len, dims)
 				recon_loss = F.mse_loss(x[None].repeat(args.mce_samples+1,1,1,1), x_gen, reduction='sum')
 
+				if args.variant == 1:
+					variant_loss = torch.zeros_like(recon_loss)
 				if args.variant == 2:
 					# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
 					zr_cond_mean = []
@@ -60,7 +62,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 
 					zr_cond_mean = torch.concat(zr_cond_mean)
 					xr_cond = model._output(model._decoder(zr_cond_mean))
-					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
+					variant_loss = F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
 				
 				if args.variant == 3 or args.variant == 4:
 					# Conditional Sampling: Conditioning the HMM with the Posterior and Sampling from this Conditional distribution
@@ -75,8 +77,10 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 
 					zr_cond_samples = torch.concat([zr_cond_samples, zr_cond_mean[None]])
 					xr_cond = model._output(model._decoder(zr_cond_samples))
-					recon_loss = recon_loss + F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
+					variant_loss = F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
 				
+				gamma = 0.99**epoch
+				recon_loss = gamma*recon_loss + (1-gamma)*variant_loss
 			else:
 				# x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
 				# recon_loss = F.mse_loss(x, x_gen, reduction='sum')
@@ -93,7 +97,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
 				reg_loss = torch.distributions.kl_divergence(zh_post, zh_prior).mean() + torch.distributions.kl_divergence(zr_post, zr_prior).mean()
 				total_reg.append(reg_loss)
-				loss = recon_loss + args.beta*reg_loss
+				loss = recon_loss + (1-(1-args.beta)**epoch)*reg_loss
 			else:
 				loss = recon_loss
 				total_reg.append(0)
@@ -115,8 +119,6 @@ if __name__=='__main__':
 	np.random.seed(args.seed)
 	torch.autograd.set_detect_anomaly(True)
 
-	assert args.dataset != 'buetepage_pepper'
-	
 	if args.dataset == 'buetepage':
 		dataset = buetepage.HHWindowDataset
 	elif args.dataset == 'nuisi':
