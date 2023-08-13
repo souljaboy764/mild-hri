@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -41,6 +42,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 		# with torch.cuda.amp.autocast(dtype=torch.bfloat16):
 		if True: #
 			xr_gen, zr_samples, zr_post = model_r(x_r)
+			xr_gen = xr_gen * args_r.joints_range + args_r.joints_min
 			
 			if args.variant != 1 or not model_r.training:
 				zh_post = model_h(x_h, dist_only=True)
@@ -61,7 +63,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 						zr_cond_mean.append(zr_cond[None])
 
 					zr_cond_mean = torch.concat(zr_cond_mean)
-					xr_cond = model_r._output(model_r._decoder(zr_cond_mean))
+					xr_cond = model_r._output(model_r._decoder(zr_cond_mean)) * args_r.joints_range + args_r.joints_min
 					recon_loss = recon_loss + F.mse_loss(x_r[None].repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 				if args.variant == 3 or args.variant == 4:
@@ -76,7 +78,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 						zr_cond_samples = zr_cond_mean + zr_cond_stddev*torch.randn((model_r.mce_samples, seq_len, model_r.latent_dim), device=device)
 
 					zr_cond_samples = torch.concat([zr_cond_samples, zr_cond_mean[None]])
-					xr_cond = model_r._output(model_r._decoder(zr_cond_samples))
+					xr_cond = model_r._output(model_r._decoder(zr_cond_samples)) * args_r.joints_range + args_r.joints_min
 					recon_loss = recon_loss + F.mse_loss(x_r.repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 			else:
@@ -85,7 +87,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim),
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				
-				xr_cond = model_r._output(model_r._decoder(zr_cond))
+				xr_cond = model_r._output(model_r._decoder(zr_cond)) * args_r.joints_range + args_r.joints_min
 				recon_loss = F.mse_loss(x_r, xr_cond, reduction='sum')
 			
 			if model_r.training and epoch!=0:	
@@ -131,11 +133,17 @@ if __name__=='__main__':
 	train_iterator = DataLoader(dataset(args_r.src, train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
 	test_iterator = DataLoader(dataset(args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
+	args_r.joints_max = torch.Tensor(train_iterator.dataset.joints_max).to(device)
+	args_r.joints_min = torch.Tensor(train_iterator.dataset.joints_min).to(device)
+	args_r.joints_range = args_r.joints_max - args_r.joints_min 
+
 	print("Creating Model and Optimizer")
 	ssm = ckpt_h['ssm']
 	model_h = getattr(mild_hri.vae, args_h.model)(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt_h['model'])
-	model_r = getattr(mild_hri.vae, args_h.model)(**{**(args_h.__dict__), **(args_r.__dict__)}).to(device)
+	model_r = getattr(mild_hri.vae, args_h.model)(**{**(args_h.__dict__), **(args_r.__dict__)})
+	model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
+	model_r = model_r.to(device)
 	params = model_r.parameters()
 	named_params = model_r.named_parameters()
 	optimizer = torch.optim.AdamW(params, lr=args_r.lr, fused=True)
