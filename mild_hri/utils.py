@@ -8,6 +8,7 @@ import argparse
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 from torch.nn.functional import grid_sample, affine_grid
 from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -239,21 +240,26 @@ def mypause(interval):
             canvas.start_event_loop(interval)
             return
 	
-def window_concat(traj_data, window_length, pepper=False):
+def window_concat(traj_data, window_length, robot=None):
 	window_trajs = []
 	for i in range(len(traj_data)):
 		trajs_concat = []
 		traj_shape = traj_data[i].shape
 		dim = traj_shape[-1]
-		if pepper:
+		if robot is None:
+			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
+				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
+				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+		elif robot=='pepper':
 			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
 			trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
 			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
 			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
-		else:
-			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+		elif robot=='yumi':
+			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+			trajs_concat.append(traj_data[i][:,:dim-7][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-7))))
+			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+			trajs_concat.append(traj_data[i][:,-7:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*7)))
 
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)
@@ -274,7 +280,7 @@ def evaluate_ckpt_hh(ckpt_path):
 	model.eval()
 	ssm = ckpt['ssm']
 
-	return evaluate_ckpt(model, model, ssm, args_ckpt.cov_cond, test_iterator)
+	return evaluate_ckpt(model, model, ssm, args_ckpt.cov_cond, test_iterator, None)
 
 def evaluate_ckpt_hr(ckpt_path):
 	ckpt = torch.load(ckpt_path)
@@ -288,16 +294,19 @@ def evaluate_ckpt_hr(ckpt_path):
 
 	model_h = VAE(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
-	model_r = VAE(**{**(args_h.__dict__), **(args_r.__dict__)}).to(device)
+	model_r = VAE(**{**(args_h.__dict__), **(args_r.__dict__)})
+	# model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
+	model_r.to(device)
+
 	model_r.load_state_dict(ckpt['model_r'])
 	
 	model_h.eval()
 	model_r.eval()
 	ssm = ckpt['ssm']
 
-	return evaluate_ckpt(model_h, model_r, ssm, args_r.cov_cond, test_iterator)
+	return evaluate_ckpt(model_h, model_r, ssm, args_r.cov_cond, test_iterator, args_r)
 
-def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
+def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 	pred_mse = []
 	vae_mse = []
 
@@ -306,8 +315,8 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 	x_cond = []
 	with torch.no_grad():
 		for i, x in enumerate(test_iterator):
-			# if i<7:
-			# 	continue
+			if i<7:
+				continue
 			x, label = x
 			x = x[0]
 			label = label[0]
@@ -327,16 +336,16 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 			zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
 											data_Sigma_in=data_Sigma_in,
 											return_cov=False) 
-			xr_cond = model_r._output(model_r._decoder(zr_cond))
+			xr_cond = model_r._output(model_r._decoder(zr_cond)) # * args_r.joints_range + args_r.joints_min
 			x_cond.append(xr_cond.cpu().numpy())
 			
 			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-	x_in = np.array(x_in,dtype=object)
-	x_cond = np.array(x_cond,dtype=object)
-	x_vae = np.array(x_vae,dtype=object)
+	# x_in = np.array(x_in,dtype=object)
+	# x_cond = np.array(x_cond,dtype=object)
+	# x_vae = np.array(x_vae,dtype=object)
 
-	np.savez_compressed('x_test_cond.npz', x_in=x_in, x_cond=x_cond, x_vae=x_vae)
+	# np.savez_compressed('x_test_cond_norm.npz', x_in=x_in, x_cond=x_cond, x_vae=x_vae)
 	
 	return pred_mse, vae_mse
 

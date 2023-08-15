@@ -62,8 +62,8 @@ class PepperDataset(HHDataset):
 			self.joints_max = np.where(self.joints_max<traj_max, traj_max, self.joints_max)
 			
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
-		print(self.joints_min)
-		print(self.joints_max)
+		# print(self.joints_min)
+		# print(self.joints_max)
 class HHWindowDataset(Dataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
 		dataset = HHDataset(datafile, train, downsample)
@@ -84,7 +84,7 @@ class PepperWindowDataset(HHWindowDataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
 		self._dataset = PepperDataset(datafile, train, downsample)
 		self.actidx = self._dataset.actidx
-		self.traj_data = window_concat(self._dataset.traj_data, window_length, True)
+		self.traj_data = window_concat(self._dataset.traj_data, window_length, 'pepper')
 		self.len = len(self.traj_data)
 		self.labels = np.zeros(self.len)
 		self.joints_max = np.tile(self._dataset.joints_max, window_length)
