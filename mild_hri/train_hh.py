@@ -79,8 +79,8 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 					xr_cond = model._output(model._decoder(zr_cond_samples))
 					variant_loss = F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
 				
-				gamma = 0.99**epoch
-				recon_loss = gamma*recon_loss + (1-gamma)*variant_loss
+				# gamma = 0.99**epoch
+				# recon_loss = gamma*recon_loss + (1-gamma)*variant_loss
 			else:
 				# x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
 				# recon_loss = F.mse_loss(x, x_gen, reduction='sum')
@@ -97,7 +97,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
 				reg_loss = torch.distributions.kl_divergence(zh_post, zh_prior).mean() + torch.distributions.kl_divergence(zr_post, zr_prior).mean()
 				total_reg.append(reg_loss)
-				loss = recon_loss + (1-(1-args.beta)**epoch)*reg_loss
+				loss = recon_loss + args.beta*reg_loss
 			else:
 				loss = recon_loss
 				total_reg.append(0)
