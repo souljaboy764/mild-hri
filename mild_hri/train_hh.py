@@ -150,13 +150,6 @@ if __name__=='__main__':
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	print("Building Writer")
 	writer = SummaryWriter(SUMMARIES_FOLDER)
-	
-	s = ''
-	for k in args.__dict__:
-		s += str(k) + ' : ' + str(args.__dict__[k]) + '\n'
-	writer.add_text('args', s)
-
-	writer.flush()
 
 	if not os.path.exists(args.results):
 		print("Creating Result Directory")
@@ -234,11 +227,11 @@ if __name__=='__main__':
 				# 	ssm[a].reg = torch.Tensor(ssm_np.reg).to(device).requires_grad_(False)
 
 				# z_encoded = torch.concat(z_encoded)
-				z_encoded = np.concatenate(z_encoded)
-				for zdim in range(args.latent_dim):
-					writer.add_histogram(f'z_h/{a}_{zdim}', z_encoded[:,zdim], epoch)
-					writer.add_histogram(f'z_r/{a}_{zdim}', z_encoded[:,args.latent_dim+zdim], epoch)
-				writer.add_image(f'hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
+				# z_encoded = np.concatenate(z_encoded)
+				# for zdim in range(args.latent_dim):
+				# 	writer.add_histogram(f'z_h/{a}_{zdim}', z_encoded[:,zdim], epoch)
+				# 	writer.add_histogram(f'z_r/{a}_{zdim}', z_encoded[:,args.latent_dim+zdim], epoch)
+				# writer.add_image(f'hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
 				alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
 				writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model, optimizer, args, epoch)

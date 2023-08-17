@@ -42,7 +42,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 		# with torch.cuda.amp.autocast(dtype=torch.bfloat16):
 		if True: #
 			xr_gen, zr_samples, zr_post = model_r(x_r)
-			xr_gen = xr_gen * args_r.joints_range + args_r.joints_min
+			# xr_gen = xr_gen * args_r.joints_range + args_r.joints_min
 			
 			if args.variant != 1 or not model_r.training:
 				zh_post = model_h(x_h, dist_only=True)
@@ -63,7 +63,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 						zr_cond_mean.append(zr_cond[None])
 
 					zr_cond_mean = torch.concat(zr_cond_mean)
-					xr_cond = model_r._output(model_r._decoder(zr_cond_mean)) * args_r.joints_range + args_r.joints_min
+					xr_cond = model_r._output(model_r._decoder(zr_cond_mean))# * args_r.joints_range + args_r.joints_min
 					recon_loss = recon_loss + F.mse_loss(x_r[None].repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 				if args.variant == 3 or args.variant == 4:
@@ -78,7 +78,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 						zr_cond_samples = zr_cond_mean + zr_cond_stddev*torch.randn((model_r.mce_samples, seq_len, model_r.latent_dim), device=device)
 
 					zr_cond_samples = torch.concat([zr_cond_samples, zr_cond_mean[None]])
-					xr_cond = model_r._output(model_r._decoder(zr_cond_samples)) * args_r.joints_range + args_r.joints_min
+					xr_cond = model_r._output(model_r._decoder(zr_cond_samples))# * args_r.joints_range + args_r.joints_min
 					recon_loss = recon_loss + F.mse_loss(x_r.repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 			else:
@@ -87,7 +87,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim),
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				
-				xr_cond = model_r._output(model_r._decoder(zr_cond)) * args_r.joints_range + args_r.joints_min
+				xr_cond = model_r._output(model_r._decoder(zr_cond))# * args_r.joints_range + args_r.joints_min
 				recon_loss = F.mse_loss(x_r, xr_cond, reduction='sum')
 			
 			if model_r.training and epoch!=0:	
@@ -142,7 +142,7 @@ if __name__=='__main__':
 	model_h = getattr(mild_hri.vae, args_h.model)(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt_h['model'])
 	model_r = getattr(mild_hri.vae, args_h.model)(**{**(args_h.__dict__), **(args_r.__dict__)})
-	model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
+	# model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
 	model_r = model_r.to(device)
 	params = model_r.parameters()
 	named_params = model_r.named_parameters()
@@ -170,18 +170,7 @@ if __name__=='__main__':
 	NUM_ACTIONS = len(test_iterator.dataset.actidx)
 	print("Building Writer")
 	writer = SummaryWriter(SUMMARIES_FOLDER)
-	
-	s = ''
-	for k in args_r.__dict__:
-		s += str(k) + ' : ' + str(args_r.__dict__[k]) + '\n'
-	writer.add_text('args_r', s)
 
-	for k in args_h.__dict__:
-		s += str(k) + ' : ' + str(args_h.__dict__[k]) + '\n'
-	writer.add_text('args_h', s)
-	
-	writer.flush()
-	
 	if args_r.ckpt is not None:
 		ckpt = torch.load(args_r.ckpt)
 		model_r.load_state_dict(ckpt['model_r'])
@@ -194,24 +183,24 @@ if __name__=='__main__':
 	for epoch in range(global_epochs, args_r.epochs):
 		model_r.train()
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
-		write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
-		params = []
-		grads = []
-		
-		for name, param in model_r.named_parameters():
-			if param.grad is None:
-				continue
-			writer.add_histogram('grads_r/'+name, param.grad.reshape(-1), epoch)
-			writer.add_histogram('param_r/'+name, param.reshape(-1), epoch)
-			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
-				print('zero grad for',name)
-		
 		model_r.eval()
 		with torch.no_grad():
 			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
-			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
 
-		if epoch % 10 == 0:
+		if epoch % 10 == 0 or epoch==args_r.epochs-1:
+			write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
+			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
+			params = []
+			grads = []
+			
+			for name, param in model_r.named_parameters():
+				if param.grad is None:
+					continue
+				writer.add_histogram('grads_r/'+name, param.grad.reshape(-1), epoch)
+				writer.add_histogram('param_r/'+name, param.reshape(-1), epoch)
+				if torch.allclose(param.grad, torch.zeros_like(param.grad)):
+					print('zero grad for',name)
+			
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d.pth'%(epoch))
 			torch.save({'model_r': model_r.state_dict(), 'model_h': model_h.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'args_r':args_r, 'args_h':args_h, 'ssm':ssm}, checkpoint_file)
 
