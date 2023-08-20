@@ -177,19 +177,6 @@ if __name__=='__main__':
 	for epoch in range(global_epochs, args.epochs):
 		model.train()
 		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, ssm, model, optimizer, args, epoch)
-		steps_done = (epoch+1)*iters
-		write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
-		params = []
-		grads = []
-		for name, param in list(model.named_parameters())+list(model.named_parameters()):
-		# for name, param in model.named_parameters():
-			if param.grad is None:
-				continue
-			writer.add_histogram('grads/'+name, param.grad.reshape(-1), epoch)
-			writer.add_histogram('param/'+name, param.reshape(-1), epoch)
-			if torch.allclose(param.grad, torch.zeros_like(param.grad)):
-				print('zero grad for',name)
-		
 		model.eval()
 		with torch.no_grad():
 			# Updating Prior
@@ -200,7 +187,6 @@ if __name__=='__main__':
 				for j in range(s[0], s[1]):
 				# for j in np.random.randint(s[0], s[1], 12):
 					x, label = train_iterator.dataset[j]
-					assert np.all(label == a)
 					x = torch.Tensor(x).to(device)
 					seq_len, dims = x.shape
 					lens.append(seq_len)
@@ -232,12 +218,30 @@ if __name__=='__main__':
 				# 	writer.add_histogram(f'z_h/{a}_{zdim}', z_encoded[:,zdim], epoch)
 				# 	writer.add_histogram(f'z_r/{a}_{zdim}', z_encoded[:,args.latent_dim+zdim], epoch)
 				# writer.add_image(f'hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
+				# alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
+				# writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
+
+		if epoch % 10 == 0 or epoch==args.epochs-1:
+			with torch.no_grad():
+				test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model, optimizer, args, epoch)
+			write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
+			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
+			params = []
+			grads = []
+			for name, param in list(model.named_parameters())+list(model.named_parameters()):
+			# for name, param in model.named_parameters():
+				if param.grad is None:
+					continue
+				writer.add_histogram('grads/'+name, param.grad.reshape(-1), epoch)
+				writer.add_histogram('param/'+name, param.reshape(-1), epoch)
+				if torch.allclose(param.grad, torch.zeros_like(param.grad)):
+					print('zero grad for',name)
+
+			for a in range(len(ssm)):
 				alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
 				writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
-			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model, optimizer, args, epoch)
-			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
-
-		if epoch % 10 == 0:
+		
+			
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d.pth'%(epoch))
 			torch.save({'model': model.state_dict(), 'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
 			# torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)

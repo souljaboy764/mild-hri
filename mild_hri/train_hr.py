@@ -15,18 +15,11 @@ import pbdlib as pbd
 import pbdlib_torch as pbd_torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch):
+def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch, priors):
 	iters = 0
 	total_recon, total_reg, total_loss = [], [], []
-	mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior = [], [], [], []
+	mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior = priors
 	z_dim = args.latent_dim
-	if ssm!=[] and model_r.training:
-		with torch.no_grad():
-			for i in range(len(ssm)):
-				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,z_dim:]]))
-				Sigma_chol_prior.append(torch.concat([batchNearestPDCholesky(ssm[i].sigma[None, :, :z_dim, :z_dim]), batchNearestPDCholesky(ssm[i].sigma[None, :, z_dim:, z_dim:])]))
-				alpha_prior.append(ssm[i].forward_variable(marginal=[], sample_size=1000))
-				alpha_argmax_prior.append(alpha_prior[-1].argmax(0))
 	for i, x in enumerate(iterator):
 		x, label = x
 		x = x[0]
@@ -180,14 +173,24 @@ if __name__=='__main__':
 	torch.compile(model_h)
 	torch.compile(model_r)
 	model_h.eval()
+	mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior = [], [], [], []
+	z_dim = args_r.latent_dim
+	if ssm!=[] and model_r.training:
+		with torch.no_grad():
+			for i in range(len(ssm)):
+				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,z_dim:]]))
+				Sigma_chol_prior.append(torch.concat([batchNearestPDCholesky(ssm[i].sigma[None, :, :z_dim, :z_dim]), batchNearestPDCholesky(ssm[i].sigma[None, :, z_dim:, z_dim:])]))
+				alpha_prior.append(ssm[i].forward_variable(marginal=[], sample_size=1000))
+				alpha_argmax_prior.append(alpha_prior[-1].argmax(0))
+	priors = mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior
 	for epoch in range(global_epochs, args_r.epochs):
 		model_r.train()
-		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
-		model_r.eval()
-		with torch.no_grad():
-			test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args_r, epoch)
+		train_recon, train_kl, train_loss, iters = run_iteration(train_iterator, ssm, model_h, model_r, optimizer, args_r, epoch, priors)
 
 		if epoch % 10 == 0 or epoch==args_r.epochs-1:
+			model_r.eval()
+			with torch.no_grad():
+				test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model_h, model_r, optimizer, args_r, epoch, priors)
 			write_summaries_vae(writer, train_recon, train_kl, epoch, 'train')
 			write_summaries_vae(writer, test_recon, test_kl, epoch, 'test')
 			params = []
