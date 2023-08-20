@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.cm import get_cmap
 
 import argparse
 
@@ -273,7 +272,7 @@ def evaluate_ckpt_hh(ckpt_path):
 	if args_ckpt.dataset == 'nuisi':
 		dataset = nuisi.HHWindowDataset
 	
-	test_iterator = DataLoader(dataset('../'+args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
+	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
 	model = VAE(**(args_ckpt.__dict__)).to(device)
 	model.load_state_dict(ckpt['model'])
@@ -308,15 +307,17 @@ def evaluate_ckpt_hr(ckpt_path):
 
 def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 	pred_mse = []
-	vae_mse = []
+	pred_mse_nowave = []
+	pred_mse_wave = []
+	pred_mse_shake = []
+	pred_mse_rocket = []
+	pred_mse_parachute = []
 
 	x_in = []
 	x_vae = []
 	x_cond = []
 	with torch.no_grad():
 		for i, x in enumerate(test_iterator):
-			if i<7:
-				continue
 			x, label = x
 			x = x[0]
 			label = label[0]
@@ -327,8 +328,8 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 			z_dim = model_h.latent_dim
 			
 			zh_post = model_h(x_h, dist_only=True)
-			xr_gen, _, _ = model_r(x_r)
-			x_vae.append(xr_gen.cpu().numpy())
+			# xr_gen, _, _ = model_r(x_r)
+			# x_vae.append(xr_gen.cpu().numpy())
 			if use_cov:
 				data_Sigma_in = zh_post.covariance_matrix
 			else: 
@@ -339,15 +340,30 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 			xr_cond = model_r._output(model_r._decoder(zr_cond)) # * args_r.joints_range + args_r.joints_min
 			x_cond.append(xr_cond.cpu().numpy())
 			
-			pred_mse += ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-			vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+
+			mse_i = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+			pred_mse += mse_i
+			if i<7:
+				pred_mse_wave += mse_i
+			else:
+				pred_mse_nowave += mse_i
+			
+				if i>=7 and i<15:
+					pred_mse_shake += mse_i
+				if i>=15 and i<29:
+					pred_mse_rocket += mse_i
+				if i>=29:
+					pred_mse_parachute += mse_i
+			
+			
+			# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 	# x_in = np.array(x_in,dtype=object)
 	# x_cond = np.array(x_cond,dtype=object)
 	# x_vae = np.array(x_vae,dtype=object)
 
 	# np.savez_compressed('x_test_cond_norm.npz', x_in=x_in, x_cond=x_cond, x_vae=x_vae)
 	
-	return pred_mse, vae_mse
+	return pred_mse, pred_mse_nowave, pred_mse_wave, pred_mse_shake, pred_mse_rocket, pred_mse_parachute
 
 
 def training_hh_argparse(args=None):
