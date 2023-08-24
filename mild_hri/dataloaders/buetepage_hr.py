@@ -18,10 +18,11 @@ class YumiDataset(Dataset):
 			
 			for i in range(len(self.traj_data)):
 				seq_len, dims = self.traj_data[i].shape
+				traj_h = self.traj_data[i][:,:-7]
+				traj_r = self.traj_data[i][:,-7:]
 				if downsample < 1:
 					assert downsample != 0
-					self.traj_data[i] = downsample_trajs(self.traj_data[i][:, :, None], int(downsample*seq_len), device)[0, :, 0, :]
-
+					self.traj_data[i] = np.concatenate(downsample_trajs([traj_h[:,None], traj_r[:,None]], int(downsample*seq_len), device),axis=-1)[:, 0, :]
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
 			for idx in range(len(self.actidx)):

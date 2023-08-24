@@ -177,10 +177,9 @@ def visualize_skeleton(ax, trajectory, **kwargs):
 def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
 	# train_data shape: seq_len, J, D : J - num joints, D - dimensions
 	num_trajs = len(train_data)
-	seq_len, J, D  = train_data[0].shape
-	theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device).repeat(J,1,1)
 	for i in range(num_trajs):
 		seq_len, J, D = train_data[i].shape
+		theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device).repeat(J,1,1)
 		train_data[i] = train_data[i].transpose(1,2,0) # J, D, seq_len
 		train_data[i] = torch.Tensor(train_data[i]).to(device).unsqueeze(2) # J, D, 1, seq_len
 		train_data[i] = torch.concat([train_data[i], torch.zeros_like(train_data[i])], dim=2) # J, D, 2 seq_len
@@ -189,7 +188,7 @@ def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if
 		train_data[i] = grid_sample(train_data[i].type(torch.float32), grid, align_corners=True) # J, D, 2 downsample_len
 		train_data[i] = train_data[i][:, :, 0].cpu().detach().numpy() # J, D, downsample_len
 		train_data[i] = train_data[i].transpose(2,0,1) # downsample_len, J, D
-	return np.array(train_data)
+	return train_data
 
 def init_ssm_np(nb_dim, nb_states, ssm_type, NUM_ACTIONS):
 	ssm = []
@@ -287,6 +286,8 @@ def evaluate_ckpt_hr(ckpt_path):
 	args_r = ckpt['args_r']
 	if args_r.dataset == 'buetepage_pepper':
 		dataset = buetepage.PepperWindowDataset
+	if args_r.dataset == 'buetepage_yumi':
+		dataset = buetepage.YumiWindowDataset
 	# TODO: BP_Yumi, Nuisi_Pepper
 	
 	test_iterator = DataLoader(dataset('../'+args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)

@@ -25,7 +25,7 @@ class HHDataset(Dataset):
 				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints)*3))
 				if downsample < 1:
 					assert downsample != 0
-					self.traj_data[i] = downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device)[0, :, 0, :]
+					self.traj_data[i] = np.array(downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device))[0, :, 0, :]
 				else:
 					self.traj_data[i] = np.concatenate([traj_1, traj_2], axis=-1)
 			

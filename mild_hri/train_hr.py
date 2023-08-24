@@ -119,16 +119,16 @@ if __name__=='__main__':
 	if args_r.dataset == 'buetepage_pepper':
 		dataset = buetepage.PepperWindowDataset
 	elif args_r.dataset == 'buetepage_yumi':
-		dataset = buetepage_hr.Yumi
+		dataset = buetepage_hr.YumiWindowDataset
 	# TODO: Nuitrack
 	
 	print("Reading Data")
 	train_iterator = DataLoader(dataset(args_r.src, train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
 	test_iterator = DataLoader(dataset(args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
-	args_r.joints_max = torch.Tensor(train_iterator.dataset.joints_max).to(device)
-	args_r.joints_min = torch.Tensor(train_iterator.dataset.joints_min).to(device)
-	args_r.joints_range = args_r.joints_max - args_r.joints_min 
+	# args_r.joints_max = torch.Tensor(train_iterator.dataset.joints_max).to(device)
+	# args_r.joints_min = torch.Tensor(train_iterator.dataset.joints_min).to(device)
+	# args_r.joints_range = args_r.joints_max - args_r.joints_min 
 
 	print("Creating Model and Optimizer")
 	ssm = ckpt_h['ssm']
