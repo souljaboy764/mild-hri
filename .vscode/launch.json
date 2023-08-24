@@ -21,8 +21,9 @@
                         // "--cov-reg",        "5e-4",
                         // "--cov-cond",
                         "--ckpt-h",         "logs/2023/bp_hh_20hz/v1_1/diaghmm_z3h5/trial0/models/300.pth",
-                        // "--dataset",        "nuisi",
-                        // "--src",            "./data/nuisi/traj_data.npz",
+                        "--dataset",        "buetepage_yumi",
+                        "--src",            "./data/buetepage_hr/traj_data.npz",
+                        "--num-joints",    "7",
                     ],
             "justMyCode": false,
             "env": {
