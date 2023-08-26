@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
-from mild_hri.utils import *
+from mild_hri import utils
 
 class YumiDataset(Dataset):
 	def __init__(self, datafile, train=True, downsample=1):
@@ -22,7 +22,7 @@ class YumiDataset(Dataset):
 				traj_r = self.traj_data[i][:,-7:]
 				if downsample < 1:
 					assert downsample != 0
-					self.traj_data[i] = np.concatenate(downsample_trajs([traj_h[:,None], traj_r[:,None]], int(downsample*seq_len), device),axis=-1)[:, 0, :]
+					self.traj_data[i] = np.concatenate(utils.downsample_trajs([traj_h[:,None], traj_r[:,None]], int(downsample*seq_len), utils.device),axis=-1)[:, 0, :]
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
 			for idx in range(len(self.actidx)):
@@ -38,7 +38,7 @@ class YumiWindowDataset(Dataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample=1):
 		dataset = YumiDataset(datafile, train, downsample)
 		self.actidx = dataset.actidx
-		self.traj_data = window_concat(dataset.traj_data, window_length, 'yumi')
+		self.traj_data = utils.window_concat(dataset.traj_data, window_length, 'yumi')
 		self.len = len(self.traj_data)
 		self.labels = np.zeros(self.len)
 		for idx in range(len(self.actidx)):

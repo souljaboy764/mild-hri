@@ -164,11 +164,9 @@ if __name__=='__main__':
 	if args.ckpt is not None:
 		ckpt = torch.load(args.ckpt)
 		model.load_state_dict(ckpt['model'])
-		model.load_state_dict(ckpt['model'])
-		# model.load_state_dict(ckpt['model'])
 		optimizer.load_state_dict(ckpt['optimizer'])
 		ssm = ckpt['ssm']
-		global_epochs = ckpt['epoch']
+		# global_epochs = ckpt['epoch']
 
 	print("Starting Epochs")
 	ssm = init_ssm_torch(2*args.latent_dim, args.ssm_components, args.ssm, NUM_ACTIONS, device)
