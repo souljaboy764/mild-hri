@@ -39,6 +39,21 @@ class HHDataset(Dataset):
 
 	def __getitem__(self, index):
 		return self.traj_data[index].astype(np.float32), self.labels[index].astype(np.int32)
+class HHWindowDataset(Dataset):
+	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
+		dataset = HHDataset(datafile, train, downsample)
+		self.actidx = dataset.actidx
+		self.traj_data = window_concat(dataset.traj_data, window_length)
+		self.len = len(self.traj_data)
+		self.labels = np.zeros(self.len)
+		for idx in range(len(self.actidx)):
+			self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
+
+	def __len__(self):
+		return self.len
+
+	def __getitem__(self, index):
+		return self.traj_data[index].astype(np.float32), self.labels[index].astype(np.int32)
 	
 class PepperDataset(HHDataset):
 	def __init__(self, datafile, train=True, downsample=1):
@@ -64,21 +79,6 @@ class PepperDataset(HHDataset):
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
 		# print(self.joints_min)
 		# print(self.joints_max)
-class HHWindowDataset(Dataset):
-	def __init__(self, datafile, train=True, window_length=40, downsample = 1):
-		dataset = HHDataset(datafile, train, downsample)
-		self.actidx = dataset.actidx
-		self.traj_data = window_concat(dataset.traj_data, window_length)
-		self.len = len(self.traj_data)
-		self.labels = np.zeros(self.len)
-		for idx in range(len(self.actidx)):
-			self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
-
-	def __len__(self):
-		return self.len
-
-	def __getitem__(self, index):
-		return self.traj_data[index].astype(np.float32), self.labels[index].astype(np.int32)
 	
 class PepperWindowDataset(HHWindowDataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):

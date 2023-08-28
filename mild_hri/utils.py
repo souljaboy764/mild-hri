@@ -114,8 +114,8 @@ def rotation_normalization(skeleton):
 
 def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF, with the limits
 	# Recreating arm with upper and under arm
-	rightUpperArm = skeleton[2] - skeleton[1]
-	rightUnderArm = skeleton[3] - skeleton[2]
+	rightUpperArm = skeleton[1] - skeleton[0]
+	rightUnderArm = skeleton[2] - skeleton[1]
 
 
 	rightElbowAngle = np.clip(angle(rightUpperArm, rightUnderArm), 0.0087, 1.562)
