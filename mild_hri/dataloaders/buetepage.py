@@ -19,8 +19,8 @@ class HHDataset(Dataset):
 				self.actidx = np.array([[0,7],[7,15],[15,29],[29,39]])
 
 			for i in range(len(self.traj_data)):
+				self.traj_data[i] = self.traj_data[i][:, 1:, :] # Ignoring the first shoulder/body joint as it is almost static
 				seq_len, njoints, dims = self.traj_data[i].shape
-				self.traj_data[i] = self.traj_data[i][:, :, :] # Ignoring the first shoulder/body joint as it is almost static
 				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, (njoints)*3))
 				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints)*3))
 				if downsample < 1:

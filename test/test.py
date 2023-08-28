@@ -13,6 +13,7 @@ pred_mse_parachute = []
 
 epochs = np.arange(50,401,10)
 model_types = [
+					# # HRI
 					# 'v1_1/diaghmm_z3h5',
 					# 'v1_1/diaghmm_z3h6',
 					# 'v1_1/diaghmm_z3h7',
@@ -99,7 +100,7 @@ model_types = [
 					# 'v4_2/diaghmm_z8h8',
 
 
-					#NuiSI
+					# HHI
 					'v1_1/z3h5',
 					'v1_1/z3h6',
 					'v1_1/z3h7',
@@ -112,10 +113,10 @@ model_types = [
 # Buetepage ['waving', 'handshake2', 'rocket', 'parachute']
 # NuiSI ['clapfist', 'fistbump', 'handshake', 'highfive', 'rocket', 'wave1']
 
-# print('Model\tEpochs\tTrial\tPred. MSE (all)\t\tPred. MSE w/o waving\t\tPred. MSE waving\t\tPred. MSE handshake\t\tPred. MSE rocket\t\tPred. MSE parachute')
-# print('.\t.\t.\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma')
-print('Model\tEpochs\tTrial\tPred. MSE (all)\t\tPred. MSE w/o waving\t\tPred. MSE Clapfist\t\tPred. MSE Fistbump\t\tPred. MSE handshake\t\tPred. MSE highfive\t\tPred. MSE rocket\t\tPred. MSE waving')
-print('\t\t\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma')
+print('Model\tEpochs\tTrial\tPred. MSE (all)\t\tPred. MSE w/o waving\t\tPred. MSE waving\t\tPred. MSE handshake\t\tPred. MSE rocket\t\tPred. MSE parachute')
+print('.\t.\t.\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma')
+# print('Model\tEpochs\tTrial\tPred. MSE (all)\t\tPred. MSE w/o waving\t\tPred. MSE Clapfist\t\tPred. MSE Fistbump\t\tPred. MSE handshake\t\tPred. MSE highfive\t\tPred. MSE rocket\t\tPred. MSE waving')
+# print('\t\t\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma\tmean\tsigma')
 for model_type in model_types:
 	for epoch in epochs:
 		pred_mse_k = []
@@ -129,9 +130,9 @@ for model_type in model_types:
 		# pred_mse_parachute_k = []
 		for trial in range(4):
 			if epoch == 400:
-				ckpt_path = f'logs/2023/nuisi_hh/{model_type}/trial{trial}/models/final_399.pth'
+				ckpt_path = f'logs/2023/bp_hh_20hz_3joints/{model_type[5:]}/trial{trial}/models/final_399.pth'
 			else:
-				ckpt_path = f'logs/2023/nuisi_hh/{model_type}/trial{trial}/models/' + '%0.3d'%epoch + '.pth'
+				ckpt_path = f'logs/2023/bp_hh_20hz_3joints/{model_type[5:]}/trial{trial}/models/' + '%0.3d'%epoch + '.pth'
 	
 			ckpt = torch.load(ckpt_path)
 			# pred_mse_ckpt, pred_mse_nowave_ckpt, pred_mse_wave_ckpt, pred_mse_shake_ckpt, pred_mse_rocket_ckpt, pred_mse_parachute_ckpt = evaluate_ckpt_hh(ckpt_path)

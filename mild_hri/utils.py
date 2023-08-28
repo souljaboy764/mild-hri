@@ -405,7 +405,7 @@ def training_hh_argparse(args=None):
 						help='Factor for downsampling the data (default: 0.2)')
 	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
 						help='Window Size for inputs (default: 5)')
-	parser.add_argument('--num-joints', default=4, type=int,
+	parser.add_argument('--num-joints', default=3, type=int,
 		     			help='Number of joints in the input data')
 	parser.add_argument('--joint-dims', default=3, type=int,
 		     			help='Number of Dimensions of each joint in the input data')
