@@ -37,55 +37,16 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 		if model.training:
 			optimizer.zero_grad()
 
-		# with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-		if True: #
+		with torch.cuda.amp.autocast(dtype=torch.bfloat16):
 			xh_gen, zh_samples, zh_post = model(x[0])
 			xr_gen, zr_samples, zr_post = model(x[1])
-			if args.cov_cond:
-				data_Sigma_in = zh_post.covariance_matrix
-			else:
-				data_Sigma_in = None
 			
 			if model.training:
 				x_gen = torch.concat([xh_gen[:, None], xr_gen[:, None]], dim=1) # (mce_samples, 2, seq_len, dims)
 				recon_loss = F.mse_loss(x[None].repeat(args.mce_samples+1,1,1,1), x_gen, reduction='sum')
-
-				if args.variant == 1:
-					variant_loss = torch.zeros_like(recon_loss)
-				if args.variant == 2:
-					# Sample Conditioning: Sampling from Posterior and then Conditioning the HMM
-					zr_cond_mean = []
-					for zh in zh_samples:
-						zr_cond = ssm[label].condition(zh, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=alpha_prior[label][:, :seq_len], 
-														return_cov=False, data_Sigma_in=data_Sigma_in)
-						zr_cond_mean.append(zr_cond[None])
-
-					zr_cond_mean = torch.concat(zr_cond_mean)
-					xr_cond = model._output(model._decoder(zr_cond_mean))
-					variant_loss = F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
-				
-				if args.variant == 3 or args.variant == 4:
-					# Conditional Sampling: Conditioning the HMM with the Posterior and Sampling from this Conditional distribution
-					zr_cond_mean, zr_cond_sigma = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), h=alpha_prior[label][:, :seq_len], 
-													return_cov=True, data_Sigma_in=data_Sigma_in)
-					if args.variant == 3:
-						zr_cond_L = batchNearestPDCholesky(zr_cond_sigma)
-						zr_cond_samples = zr_cond_mean + (zr_cond_L@torch.randn((model.mce_samples, seq_len, model.latent_dim, 1), device=device))[..., 0]
-					else:
-						zr_cond_stddev = torch.sqrt(torch.diagonal(zr_cond_sigma, dim2=-2, dim1=-1))
-						zr_cond_samples = zr_cond_mean + zr_cond_stddev*torch.randn((model.mce_samples, seq_len, model.latent_dim), device=device)
-
-					zr_cond_samples = torch.concat([zr_cond_samples, zr_cond_mean[None]])
-					xr_cond = model._output(model._decoder(zr_cond_samples))
-					variant_loss = F.mse_loss(x[None,1].repeat(args.mce_samples+1,1,1), xr_cond, reduction='mean')
-				
-				# gamma = 0.99**epoch
-				# recon_loss = gamma*recon_loss + (1-gamma)*variant_loss
 			else:
-				# x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
-				# recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim),
-												return_cov=False, data_Sigma_in=data_Sigma_in)
+												return_cov=False, data_Sigma_in=None)
 				
 				xr_cond = model._output(model._decoder(zr_cond))
 				recon_loss = F.mse_loss(x[1], xr_cond, reduction='sum')
@@ -198,27 +159,13 @@ if __name__=='__main__':
 				ssm_np = getattr(pbd, args.ssm)(nb_dim=2*args.latent_dim, nb_states=args.ssm_components)
 				ssm_np.init_hmm_kbins(z_encoded)
 				ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
-				# ssm[a].init_hmm_kbins(z_encoded)
-				# ssm[a].em(z_encoded)
+
 				for k in vars(ssm_np).keys():
 					if isinstance(ssm_np.__getattribute__(k), np.ndarray):
 						ssm[a].__setattr__(k, torch.Tensor(ssm_np.__getattribute__(k)).to(device).requires_grad_(False))
 					else:
 						ssm[a].__setattr__(k, ssm_np.__getattribute__(k))
-				# if args.variant == 3:
-				# 	ssm[a].reg = cov_reg.to(device).requires_grad_(False)
-				# else:
-				# 	ssm[a].reg = torch.Tensor(ssm_np.reg).to(device).requires_grad_(False)
-
-				# z_encoded = torch.concat(z_encoded)
-				# z_encoded = np.concatenate(z_encoded)
-				# for zdim in range(args.latent_dim):
-				# 	writer.add_histogram(f'z_h/{a}_{zdim}', z_encoded[:,zdim], epoch)
-				# 	writer.add_histogram(f'z_r/{a}_{zdim}', z_encoded[:,args.latent_dim+zdim], epoch)
-				# writer.add_image(f'hmm_{a}_trans', ssm[a].Trans, epoch, dataformats='HW')
-				# alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
-				# writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
-
+				
 		if epoch % 10 == 0 or epoch==args.epochs-1:
 			with torch.no_grad():
 				test_recon, test_kl, test_loss, iters = run_iteration(test_iterator, ssm, model, optimizer, args, epoch)
@@ -241,13 +188,11 @@ if __name__=='__main__':
 		
 			
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d.pth'%(epoch))
-			torch.save({'model': model.state_dict(), 'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
-			# torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
+			torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
 
 		print(epoch,'epochs done')
 
 	writer.flush()
 
 	checkpoint_file = os.path.join(MODELS_FOLDER, f'final_{epoch}.pth')
-	torch.save({'model': model.state_dict(), 'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
-	# torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
+	torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'ssm':ssm, 'args':args}, checkpoint_file)
