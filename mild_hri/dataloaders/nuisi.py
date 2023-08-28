@@ -11,12 +11,12 @@ class HHDataset(Dataset):
 			if train:
 				self.traj_data = data['train_data']
 				self.labels = data['train_labels']
-				self.actidx = np.array([[0, 15], [15, 30], [30, 45], [45, 60], [60, 75], [75, 90]])
+				self.actidx = np.array([[0, 9], [9, 17], [17, 26], [26, 33]])
 
 			else:
 				self.traj_data = data['test_data']
 				self.labels = data['test_labels']
-				self.actidx = np.array([[0, 4], [4, 8], [8, 12], [12, 16], [16, 20], [20, 24]])
+				self.actidx = np.array([[0, 3], [3, 6], [6, 9], [9, 11]])
 			
 			self.len = len(self.traj_data)
 			self.labels = np.zeros(self.len)
