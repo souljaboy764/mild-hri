@@ -28,15 +28,14 @@ model.load_state_dict(ckpt['model'])
 model.eval()
 z_dim = model.latent_dim
 
-if args_ckpt.dataset == 'buetepage':
-	dataset = buetepage.HHWindowDataset
-	actions = ['Hand Wave', 'Hand Shake', 'Rocket Fistbump', 'Parachute Fistbump']
-elif args_ckpt.dataset == 'nuisi':
-	dataset = nuisi.HHWindowDataset
-	actions = ['clapfist2', 'fistbump2', 'handshake2', 'highfive1', 'rocket1', 'wave1']
+actions = ['Hand Wave', 'Hand Shake', 'Rocket Fistbump', 'Parachute Fistbump']
+# if args_ckpt.dataset == 'buetepage':
+# 	dataset = buetepage.HHWindowDataset
+# elif args_ckpt.dataset == 'nuisi':
+dataset = nuisi.HHWindowDataset
 # TODO: Nuitrack
 
-test_dataset = dataset(os.path.join(args_ckpt.src), train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample)
+test_dataset = dataset('data/nuisi/traj_data.npz', train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample)
 
 fig = plt.figure()
 spec = fig.add_gridspec(2, 2)
@@ -91,7 +90,7 @@ for a in actidx[::2]:
 	sigma_r = ssm[label].sigma[:, z_dim:z_dim+3, z_dim:z_dim+3].detach().cpu().numpy()
 	
 	alpha_idx = np.linspace(0, 1, seq_len)
-	for i in range(seq_len):
+	for i in range(0,seq_len,5):
 		ax_skel.cla()
 		ax_skel.set_xlabel('X')
 		ax_skel.set_ylabel('Y')
