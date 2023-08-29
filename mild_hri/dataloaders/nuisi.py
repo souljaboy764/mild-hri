@@ -23,6 +23,20 @@ class HHDataset(Dataset):
 			for idx in range(len(self.actidx)):
 				self.labels[self.actidx[idx][0]:self.actidx[idx][1]] = idx
 
+			for i in range(len(self.traj_data)):
+				seq_len, dims = self.traj_data[i].shape
+				traj_1 = self.traj_data[i][:, :dims//2]
+				traj_2 = self.traj_data[i][:, dims//2:]
+
+				vel_1 = np.diff(traj_1, axis=0, prepend=traj_1[0:1,:])
+				vel_2 = np.diff(traj_2, axis=0, prepend=traj_2[0:1,:])
+
+				traj_1 = np.concatenate([traj_1, vel_1],axis=-1)
+				traj_2 = np.concatenate([traj_2, vel_2],axis=-1)
+
+				self.traj_data[i] = np.concatenate([traj_1, traj_2], axis=-1)
+			
+
 	def __len__(self):
 		return self.len
 

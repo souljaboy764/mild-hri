@@ -26,7 +26,8 @@
                         // "--src",            "./data/nuisi/traj_data.npz",
                         // "--num-joints",    "7",
                         // "--hidden-sizes",   "40", "20",
-                        "--latent-dim", "5", "--ssm-components", "6", "--beta", "0.005", "--variant", "1", "--grad-clip", "0.0", "--lr", "5e-4", "--cov-reg", "5e-3", "--downsample", "0.2", "--window-size", "5", "--mce-samples", "10", "--dataset", "buetepage", "--src", "./data/buetepage/traj_data.npz", "--model", "VAE", "--ssm", "HMM", "--hidden-sizes", "40", "20", "--epochs", "400"
+                        // "--latent-dim", "5", "--ssm-components", "6", "--beta", "0.005", "--variant", "1", "--grad-clip", "0.0", "--lr", "5e-4", "--cov-reg", "5e-3", "--downsample", "0.2", "--window-size", "5", "--mce-samples", "10", "--dataset", "buetepage", "--src", "./data/buetepage/traj_data.npz", "--model", "VAE", "--ssm", "HMM", "--hidden-sizes", "40", "20", "--epochs", "400"
+                        "--ckpt-h", "logs/2023/bp_hh_20hz_3joints_xvel/z5h6/trial0/models/399.pth", "--src", "./data/buetepage/traj_data.npz", "--num-joints", "4", "--beta", "0.005", "--variant", "3", "--grad-clip", "0.0", "--lr", "5e-4", "--downsample", "0.2", "--window-size", "5", "--mce-samples", "10", "--dataset", "buetepage_pepper", "--epochs", "400"
                     ],
             "justMyCode": false,
             "env": {
