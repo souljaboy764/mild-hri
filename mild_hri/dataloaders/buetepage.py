@@ -23,6 +23,13 @@ class HHDataset(Dataset):
 				seq_len, njoints, dims = self.traj_data[i].shape
 				traj_1 = self.traj_data[i][..., :3].reshape((seq_len, (njoints)*3))
 				traj_2 = self.traj_data[i][..., 3:].reshape((seq_len, (njoints)*3))
+
+				vel_1 = np.diff(traj_1, axis=0, prepend=traj_1[0:1,:])
+				vel_2 = np.diff(traj_2, axis=0, prepend=traj_2[0:1,:])
+
+				traj_1 = np.concatenate([traj_1, vel_1],axis=-1)
+				traj_2 = np.concatenate([traj_2, vel_2],axis=-1)
+
 				if downsample < 1:
 					assert downsample != 0
 					self.traj_data[i] = np.array(downsample_trajs([np.concatenate([traj_1[:, None], traj_2[:, None]], axis=-1)], int(downsample*seq_len), device))[0, :, 0, :]
@@ -65,20 +72,14 @@ class PepperDataset(HHDataset):
 			seq_len, dims = self.traj_data[i].shape
 			traj_r = []
 
-			for frame in self.traj_data[i][:, dims//2:].reshape((seq_len, dims//6, 3)):
+			# for frame in self.traj_data[i][:, dims//2:].reshape((seq_len, dims//6, 3)):
+			for frame in self.traj_data[i][:, dims//2:].reshape((seq_len, -1, 3)):
 				joints = joint_angle_extraction(frame)
 				traj_r.append(joints)
 
 			traj_r = np.array(traj_r) # seq_len, 4
-
-			traj_min = traj_r.min(0)
-			traj_max = traj_r.max(0) 
-			self.joints_min = np.where(self.joints_min>traj_min, traj_min, self.joints_min)
-			self.joints_max = np.where(self.joints_max<traj_max, traj_max, self.joints_max)
 			
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
-		# print(self.joints_min)
-		# print(self.joints_max)
 	
 class PepperWindowDataset(HHWindowDataset):
 	def __init__(self, datafile, train=True, window_length=40, downsample = 1):

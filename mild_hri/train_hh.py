@@ -22,8 +22,9 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 	if ssm!=[] and model.training:
 		with torch.no_grad():
 			for i in range(len(ssm)):
-				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,z_dim:]]))
-				Sigma_chol_prior.append(batchNearestPDCholesky(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, z_dim:, z_dim:]])))
+				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,-z_dim:]]))
+				Sigma_chol_prior.append(batchNearestPDCholesky(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, -z_dim:, -z_dim:]])))
+
 				alpha_prior.append(ssm[i].forward_variable(marginal=[], sample_size=1000))
 				alpha_argmax_prior.append(alpha_prior[-1].argmax(0))
 	for i, x in enumerate(iterator):
@@ -31,8 +32,8 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 		x = x[0]
 		label = label[0]
 		x = torch.Tensor(x).to(device)
-		seq_len, dims = x.shape
-		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # (2, seq_len, dims) x[0] = Agent 1, x[1] = Agent 2
+		seq_len, dims = x.shape # dims = 2*(pos_dim+vel_dim) if  cartesian velocity is used
+		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # (2, seq_len, (pos_dim+vel_dim)) x[0] = Agent 1, x[1] = Agent 2
 
 		if model.training:
 			optimizer.zero_grad()
@@ -42,14 +43,18 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 			xr_gen, zr_samples, zr_post = model(x[1])
 			
 			if model.training:
-				x_gen = torch.concat([xh_gen[:, None], xr_gen[:, None]], dim=1) # (mce_samples, 2, seq_len, dims)
+				x_gen = torch.concat([xh_gen[:, None], xr_gen[:, None]], dim=1) # (mce_samples, 2, seq_len, (pos_dim+vel_dim))
 				recon_loss = F.mse_loss(x[None].repeat(args.mce_samples+1,1,1,1), x_gen, reduction='sum')
 			else:
-				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim),
-												return_cov=False, data_Sigma_in=None)
+
+				# zh_vel = torch.diff(zh_post.mean, dim=0, prepend=zh_post.mean[0:1,:])
+				# zr_cond = ssm[label].condition(torch.concat([zh_post.mean, zh_vel],dim=-1), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim), return_cov=False, data_Sigma_in=None)
+				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), return_cov=False, data_Sigma_in=None)
 				
 				xr_cond = model._output(model._decoder(zr_cond))
-				recon_loss = F.mse_loss(x[1], xr_cond, reduction='sum')
+				xr_gt = x[1,:, :dims//4]
+				# recon_loss = F.mse_loss(x[1], xr_cond, reduction='sum')
+				recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='sum')
 			
 			if model.training and epoch!=0:	
 				seq_alpha = alpha_argmax_prior[label][:seq_len]
@@ -98,6 +103,7 @@ if __name__=='__main__':
 	global_epochs = 0
 
 	print("Creating Model and Optimizer")
+	args.num_joints *= 2
 	model = getattr(mild_hri.vae, args.model)(**(args.__dict__)).to(device)
 	params = model.parameters()
 	named_params = model.named_parameters()
@@ -121,6 +127,7 @@ if __name__=='__main__':
 	if not os.path.exists(SUMMARIES_FOLDER):
 		print("Creating Model Directory")
 		os.makedirs(SUMMARIES_FOLDER)
+	
 
 	if args.ckpt is not None:
 		ckpt = torch.load(args.ckpt)
@@ -128,9 +135,9 @@ if __name__=='__main__':
 		optimizer.load_state_dict(ckpt['optimizer'])
 		ssm = ckpt['ssm']
 		# global_epochs = ckpt['epoch']
+	ssm = init_ssm_torch(args.latent_dim, args.ssm_components, args.ssm, NUM_ACTIONS, device)
 
 	print("Starting Epochs")
-	ssm = init_ssm_torch(2*args.latent_dim, args.ssm_components, args.ssm, NUM_ACTIONS, device)
 
 	torch.compile(model)
 	for epoch in range(global_epochs, args.epochs):
@@ -152,11 +159,10 @@ if __name__=='__main__':
 					x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # x[0] = Agent 1, x[1] = Agent 2
 					
 					zh = model(x[0], encode_only=True)
+					# zh_diff = torch.diff(zh,dim=0,prepend=zh[0:1,:])
 					zr = model(x[1], encode_only=True)
-					# zh = model(x[0], encode_only=True)
-					# zr = model(x[1], encode_only=True)
 					z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-				ssm_np = getattr(pbd, args.ssm)(nb_dim=2*args.latent_dim, nb_states=args.ssm_components)
+				ssm_np = getattr(pbd, args.ssm)(nb_dim=ssm[a].nb_dim, nb_states=ssm[a].nb_states)
 				ssm_np.init_hmm_kbins(z_encoded)
 				ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
 
