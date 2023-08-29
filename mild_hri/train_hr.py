@@ -120,6 +120,8 @@ if __name__=='__main__':
 		dataset = buetepage.PepperWindowDataset
 	elif args_r.dataset == 'buetepage_yumi':
 		dataset = buetepage_hr.YumiWindowDataset
+	elif args_r.dataset == 'nuisi_pepper':
+		dataset = nuisi.PepperWindowDataset
 	# TODO: Nuitrack
 	
 	print("Reading Data")

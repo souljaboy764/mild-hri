@@ -345,7 +345,6 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				xr_cond = model_r._output(model_r._decoder(zr_cond)) # * args_r.joints_range + args_r.joints_min
 				x_cond.append(xr_cond.cpu().numpy())
 				
-
 				mse_i = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 				pred_mse_total += mse_i
 				pred_mse_action[-1] += mse_i
@@ -354,9 +353,8 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				# if i<7:
 				# 	pred_mse_wave += mse_i
 				# else:
-				if i<20:
+				if i>7:
 					pred_mse_nowave += mse_i
-				
 				# 	if i>=7 and i<15:
 				# 		pred_mse_shake += mse_i
 				# 	if i>=15 and i<29:
@@ -376,6 +374,10 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				# 		pred_mse_rocket += mse_i
 				# 	if i>=6:
 				# 		pred_mse_parachute += mse_i
+
+				# # NuiSI v2
+				# if i>3:
+				# 	pred_mse_nowave += mse_i
 				
 				
 				# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
