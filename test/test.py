@@ -11,7 +11,7 @@ pred_mse_shake = []
 pred_mse_rocket = []
 pred_mse_parachute = []
 
-epochs = np.arange(50,401,10)
+epochs = np.arange(0,401,10)
 model_types = [
 					# # HRI
 					# 'v1_1/diaghmm_z3h5',
@@ -106,9 +106,18 @@ model_types = [
 					# 'v1_1/z3h7',
 					# 'v1_1/z3h8',
 					# 'v1_1/z5h5',
-					'z5h6',
+					# 'z5h6',
+					'z5h5',
+					'z5h7'
 					# 'v1_1/z5h7',
 					# 'v1_1/z5h8',
+
+					# HRI
+					# 'v1_1/z5h6',
+					# 'v2_1/z5h6',
+					# 'v2_2/z5h6',
+					# 'v3_1/z5h6',
+					# 'v3_2/z5h6',
 				]
 # Buetepage & NuiSI-v2 ['waving', 'handshake2', 'rocket', 'parachute']
 # NuiSI-v1 ['clapfist', 'fistbump', 'handshake', 'highfive', 'rocket', 'wave1']
@@ -121,7 +130,7 @@ for model_type in model_types:
 	for epoch in epochs:
 		pred_mse_k = []
 		pred_mse_action_k = []
-		for i in range(6):
+		for i in range(4):
 			pred_mse_action_k.append([])
 		pred_mse_nowave_k = []
 		# pred_mse_wave_k = []

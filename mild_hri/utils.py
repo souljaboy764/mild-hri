@@ -136,7 +136,7 @@ def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF, with the
 	# Calculating the angle betwenn actual under arm position and the one calculated without roll
 	rightRoll = angle(rightUnderArmWithoutRoll, rightUnderArm)
 
-	return np.array([rightPitch, rightYaw, rightRoll, rightElbowAngle])
+	return np.array([rightPitch, rightYaw, rightRoll, rightElbowAngle]).astype(np.float32)
 
 def prepare_axis():
 	fig = plt.figure()
@@ -353,8 +353,8 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				# if i<7:
 				# 	pred_mse_wave += mse_i
 				# else:
-				if i>7:
-					pred_mse_nowave += mse_i
+				# if i>7:
+				# 	pred_mse_nowave += mse_i
 				# 	if i>=7 and i<15:
 				# 		pred_mse_shake += mse_i
 				# 	if i>=15 and i<29:
@@ -375,9 +375,9 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				# 	if i>=6:
 				# 		pred_mse_parachute += mse_i
 
-				# # NuiSI v2
-				# if i>3:
-				# 	pred_mse_nowave += mse_i
+				# NuiSI v2
+				if i>3:
+					pred_mse_nowave += mse_i
 				
 				
 				# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()

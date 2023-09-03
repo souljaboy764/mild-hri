@@ -39,3 +39,6 @@ logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h5/trial3/models/320.pth
 logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h6/trial2/models/340.pth
 logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h7/trial1/models/240.pth
 logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h8/trial3/models/120.pth
+
+
+Best one used for experiments: nuisiv2pepper_3joints_xvel/v3_2/z5h6/trial1/models/400.pth

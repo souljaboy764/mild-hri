@@ -18,7 +18,10 @@ class YumiDataset(Dataset):
 			
 			for i in range(len(self.traj_data)):
 				seq_len, dims = self.traj_data[i].shape
-				traj_h = self.traj_data[i][:,:-7]
+				traj_h = self.traj_data[i][:,3:-7]
+				vel_h = np.diff(traj_h, axis=0, prepend=traj_h[0:1,:])
+				traj_h = np.concatenate([traj_h, vel_h],axis=-1)
+				
 				traj_r = self.traj_data[i][:,-7:]
 				if downsample < 1:
 					assert downsample != 0

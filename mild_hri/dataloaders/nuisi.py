@@ -27,6 +27,8 @@ class HHDataset(Dataset):
 				seq_len, dims = self.traj_data[i].shape
 				traj_1 = self.traj_data[i][:, :dims//2]
 				traj_2 = self.traj_data[i][:, dims//2:]
+				# traj_1 = self.traj_data[i][:, dims//2-3:dims//2]
+				# traj_2 = self.traj_data[i][:, -3:]
 
 				vel_1 = np.diff(traj_1, axis=0, prepend=traj_1[0:1,:])
 				vel_2 = np.diff(traj_2, axis=0, prepend=traj_2[0:1,:])
@@ -82,6 +84,7 @@ class PepperDataset(HHDataset):
 			self.joints_max = np.where(self.joints_max<traj_max, traj_max, self.joints_max)
 			
 			self.traj_data[i] = np.concatenate([self.traj_data[i][:, :dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
+			# self.traj_data[i] = np.concatenate([self.traj_data[i][:, dims//4-3:dims//4], self.traj_data[i][:, dims//2-3:dims//2], traj_r], axis=-1) # seq_len, dims//2 + 4
 		# print(self.joints_min)
 		# print(self.joints_max)
 	
