@@ -135,7 +135,7 @@ if __name__=='__main__':
 		optimizer.load_state_dict(ckpt['optimizer'])
 		ssm = ckpt['ssm']
 		# global_epochs = ckpt['epoch']
-	ssm = init_ssm_torch(args.latent_dim, args.ssm_components, args.ssm, NUM_ACTIONS, device)
+	ssm = init_ssm_torch(args.latent_dim*2, args.ssm_components, args.ssm, NUM_ACTIONS, device)
 
 	print("Starting Epochs")
 
