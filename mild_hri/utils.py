@@ -245,19 +245,26 @@ def window_concat(traj_data, window_length, robot=None):
 		traj_shape = traj_data[i].shape
 		dim = traj_shape[-1]
 		if robot is None:
-			for traj in [traj_data[i][:,:dim//2], traj_data[i][:,dim//2:]]:
-				idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - window_length)])
-				trajs_concat.append(traj[idx].reshape((traj_shape[0] + 1 - window_length, window_length*dim//2)))
+			input_dim = dim//2
+			# input_dim = int(2*dim/3)
 		elif robot=='pepper':
-			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-			trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
-			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-			trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
+			input_dim = dim-4
 		elif robot=='yumi':
-			idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-			trajs_concat.append(traj_data[i][:,:dim-7][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-7))))
-			idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-			trajs_concat.append(traj_data[i][:,-7:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*7)))
+			input_dim = dim-7
+		idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+		trajs_concat.append(traj_data[i][:,:input_dim][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*input_dim)))
+		idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+		trajs_concat.append(traj_data[i][:,input_dim:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-input_dim))))
+		# elif robot=='pepper':
+		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+		# 	trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
+		# 	idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+		# 	trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
+		# elif robot=='yumi':
+		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
+		# 	trajs_concat.append(traj_data[i][:,:dim-7][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-7))))
+		# 	idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
+		# 	trajs_concat.append(traj_data[i][:,-7:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*7)))
 
 		trajs_concat = np.concatenate(trajs_concat,axis=-1)
 		window_trajs.append(trajs_concat)
@@ -290,7 +297,7 @@ def evaluate_ckpt_hr(ckpt_path):
 		dataset = dataloaders.buetepage_hr.YumiWindowDataset
 	# TODO: BP_Yumi, Nuisi_Pepper
 	
-	test_iterator = DataLoader(dataset(args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
+	test_iterator = DataLoader(dataset('../'+args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
 	model_h = VAE(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
@@ -350,34 +357,16 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				pred_mse_action[-1] += mse_i
 
 				# Buetepage HH & Pepper
-				# if i<7:
-				# 	pred_mse_wave += mse_i
-				# else:
-				# if i>7:
-				# 	pred_mse_nowave += mse_i
-				# 	if i>=7 and i<15:
-				# 		pred_mse_shake += mse_i
-				# 	if i>=15 and i<29:
-				# 		pred_mse_rocket += mse_i
-				# 	if i>=29:
-				# 		pred_mse_parachute += mse_i
+				if i>7:
+					pred_mse_nowave += mse_i
 
 				# # Buetepage Yumi
-				# if i<2:
-				# 	pred_mse_wave += mse_i
-				# else:
+				# if i>2:
 				# 	pred_mse_nowave += mse_i
 				
-				# 	if i>=2 and i<4:
-				# 		pred_mse_shake += mse_i
-				# 	if i>=4 and i<6:
-				# 		pred_mse_rocket += mse_i
-				# 	if i>=6:
-				# 		pred_mse_parachute += mse_i
-
-				# NuiSI v2
-				if i>3:
-					pred_mse_nowave += mse_i
+				# # NuiSI v2
+				# if i>3:
+				# 	pred_mse_nowave += mse_i
 				
 				
 				# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
