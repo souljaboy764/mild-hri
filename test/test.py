@@ -11,7 +11,8 @@ pred_mse_shake = []
 pred_mse_rocket = []
 pred_mse_parachute = []
 
-epochs = np.arange(0,401,10)
+# epochs = np.arange(0,401,10)
+epochs = [100]
 model_types = [
 					# # HRI
 					# 'v1_1/diaghmm_z3h5',
@@ -107,8 +108,8 @@ model_types = [
 					# 'v1_1/z3h8',
 					# 'v1_1/z5h5',
 					# 'z5h6',
-					'z5h5',
-					'z5h7'
+					# 'z5h5',
+					'z5h6',
 					# 'v1_1/z5h7',
 					# 'v1_1/z5h8',
 
@@ -118,6 +119,11 @@ model_types = [
 					# 'v2_2/z5h6',
 					# 'v3_1/z5h6',
 					# 'v3_2/z5h6',
+					# 'v1_1/z5h7',
+					# 'v2_1/z5h7',
+					# 'v2_2/z5h7',
+					# 'v3_1/z5h7',
+					# 'v3_2/z5h7',
 				]
 # Buetepage & NuiSI-v2 ['waving', 'handshake2', 'rocket', 'parachute']
 # NuiSI-v1 ['clapfist', 'fistbump', 'handshake', 'highfive', 'rocket', 'wave1']
@@ -139,9 +145,9 @@ for model_type in model_types:
 		# pred_mse_parachute_k = []
 		for trial in range(4):
 			if epoch == 400:
-				ckpt_path = f'logs/2023/bp_hh_20hz_3joints_xvel/{model_type}/trial{trial}/models/final_399.pth'
+				ckpt_path = f'logs/092023/bp_hh_20hz//{model_type}/trial{trial}/models/final_399.pth'
 			else:
-				ckpt_path = f'logs/2023/bp_hh_20hz_3joints_xvel/{model_type}/trial{trial}/models/' + '%0.3d'%epoch + '.pth'
+				ckpt_path = f'logs/092023/bp_hh_20hz/{model_type}/trial{trial}/models/' + '%0.3d'%epoch + '.pth'
 	
 			ckpt = torch.load(ckpt_path)
 			# pred_mse_ckpt, pred_mse_nowave_ckpt, pred_mse_wave_ckpt, pred_mse_shake_ckpt, pred_mse_rocket_ckpt, pred_mse_parachute_ckpt = evaluate_ckpt_hh(ckpt_path)
