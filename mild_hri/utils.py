@@ -293,6 +293,8 @@ def evaluate_ckpt_hr(ckpt_path):
 	args_r = ckpt['args_r']
 	if args_r.dataset == 'buetepage_pepper':
 		dataset = dataloaders.buetepage.PepperWindowDataset
+	if args_r.dataset == 'nuisi_pepper':
+		dataset = dataloaders.nuisi.PepperWindowDataset
 	if args_r.dataset == 'buetepage_yumi':
 		dataset = dataloaders.buetepage_hr.YumiWindowDataset
 	# TODO: BP_Yumi, Nuisi_Pepper
