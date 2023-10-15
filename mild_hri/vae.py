@@ -35,7 +35,7 @@ class VAE(nn.Module):
 			dec_layers.append(nn.Linear(self.dec_sizes[i], self.dec_sizes[i+1]))
 			dec_layers.append(self.activation)
 		self._decoder = nn.Sequential(*dec_layers)
-		self._output = nn.Linear(self.dec_sizes[-1], self.input_dim) 
+		self._output = nn.Linear(self.dec_sizes[-1], self.input_dim)
 		
 		
 	def forward(self, x, encode_only = False, dist_only=False):

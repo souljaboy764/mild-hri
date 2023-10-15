@@ -89,6 +89,8 @@ if __name__=='__main__':
 		dataset = buetepage.HHWindowDataset
 	elif args.dataset == 'nuisi':
 		dataset = nuisi.HHWindowDataset
+	elif args.dataset == 'alap':
+		dataset = alap.HHWindowDataset
 	# TODO: Nuitrack
 	
 	print("Reading Data")

@@ -60,7 +60,7 @@ class HHWindowDataset(Dataset):
 		for idx in range(len(self.actidx)):
 			for i in range(self.actidx[idx][0],self.actidx[idx][1]):
 				label = np.zeros((self.traj_data[i].shape[0],len(self.actidx)))
-				label[: idx] = 1
+				label[:, idx] = 1
 				self.labels.append(label)
 
 	def __len__(self):
@@ -104,6 +104,6 @@ class PepperWindowDataset(HHWindowDataset):
 		for idx in range(len(self.actidx)):
 			for i in range(self.actidx[idx][0],self.actidx[idx][1]):
 				label = np.zeros((self.traj_data[i].shape[0],len(self.actidx)))
-				label[: idx] = 1
+				label[:, idx] = 1
 				self.labels.append(label)
 

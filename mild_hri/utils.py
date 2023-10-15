@@ -174,11 +174,15 @@ def visualize_skeleton(ax, trajectory, **kwargs):
 	
 	return ax
 
-def downsample_trajs(train_data, downsample_len, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+def downsample_trajs(train_data, downsample, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
 	# train_data shape: seq_len, J, D : J - num joints, D - dimensions
 	num_trajs = len(train_data)
 	for i in range(num_trajs):
 		seq_len, J, D = train_data[i].shape
+		if downsample<1 and downsample>0:
+			downsample_len = downsample*seq_len
+		else:
+			downsample_len = downsample
 		theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device).repeat(J,1,1)
 		train_data[i] = train_data[i].transpose(1,2,0) # J, D, seq_len
 		train_data[i] = torch.Tensor(train_data[i]).to(device).unsqueeze(2) # J, D, 1, seq_len
@@ -238,19 +242,20 @@ def mypause(interval):
             canvas.start_event_loop(interval)
             return
 	
-def window_concat(traj_data, window_length, robot=None):
+def window_concat(traj_data, window_length, robot=None, input_dim=None):
 	window_trajs = []
 	for i in range(len(traj_data)):
 		trajs_concat = []
 		traj_shape = traj_data[i].shape
 		dim = traj_shape[-1]
-		if robot is None:
+		if robot is None and input_dim is None:
 			input_dim = dim//2
 			# input_dim = int(2*dim/3)
-		elif robot=='pepper':
-			input_dim = dim-4
-		elif robot=='yumi':
-			input_dim = dim-7
+		elif input_dim is None:
+			if robot=='pepper':
+				input_dim = dim-4
+			elif robot=='yumi':
+				input_dim = dim-7
 		idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
 		trajs_concat.append(traj_data[i][:,:input_dim][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*input_dim)))
 		idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
@@ -277,6 +282,8 @@ def evaluate_ckpt_hh(ckpt_path):
 		dataset = dataloaders.buetepage.HHWindowDataset
 	if args_ckpt.dataset == 'nuisi':
 		dataset = dataloaders.nuisi.HHWindowDataset
+	if args_ckpt.dataset == 'alap':
+		dataset = dataloaders.alap.HHWindowDataset
 	
 	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
@@ -348,6 +355,7 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 					data_Sigma_in = zh_post.covariance_matrix
 				else: 
 					data_Sigma_in = None
+				# print(label, label.dtype)
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
 												data_Sigma_in=data_Sigma_in,
 												return_cov=False) 
@@ -358,9 +366,9 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				pred_mse_total += mse_i
 				pred_mse_action[-1] += mse_i
 
-				# Buetepage HH & Pepper
-				if i>7:
-					pred_mse_nowave += mse_i
+				# # Buetepage HH & Pepper
+				# if i>7:
+				# 	pred_mse_nowave += mse_i
 
 				# # Buetepage Yumi
 				# if i>2:
@@ -388,7 +396,7 @@ def training_hh_argparse(args=None):
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', "nuisi"],
+	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', "nuisi", 'alap'],
 						help='Dataset to use: buetepage or nuisi (default: buetepage).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
@@ -398,7 +406,7 @@ def training_hh_argparse(args=None):
 						help='Factor for downsampling the data (default: 0.2)')
 	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
 						help='Window Size for inputs (default: 5)')
-	parser.add_argument('--num-joints', default=3, type=int,
+	parser.add_argument('--num-joints', default=12, type=int,
 		     			help='Number of joints in the input data')
 	parser.add_argument('--joint-dims', default=3, type=int,
 		     			help='Number of Dimensions of each joint in the input data')
