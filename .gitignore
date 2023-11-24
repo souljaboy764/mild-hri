@@ -154,7 +154,7 @@ cython_debug/
 results*/
 *.out
 logs*
-data/
+# data/
 *.npz
-train.sh
+# train.sh
 .vscode/

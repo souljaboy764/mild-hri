@@ -1,46 +1,20 @@
-# HSMMVAE
+# MILD-HRI
 
 Exploring the use of HSMMs for learning latent space dynamics in VAEs
 
-## Datsets
+## Data Preprocessing
 
-TODO:
+All the preprocessed data is present in the [`data`](data/) folder. The following instructions are on how to perform them from scratch.
 
-- Update preproc instructions form original repos
-- Update readme
+For the Buetepage dataset, extract the dataset from `https://github.com/souljaboy764/human_robot_interaction_data/` to a location on your PC and run the preprocessing according to the repository `buetepage_phri` and use the file `traj_data.npz` as input. This is done individually for the HHI and HRI scenarios.
 
-Current Good Model: logs/fullvae_rarm_window_alphaargmaxnocond_07132220/models/0570.pth
+For the NuiSI dataset, see the instructions in `https://github.com/souljaboy764/nuisi-dataset` for further information on preprocessing.
 
+## Training
 
-Best HH 20hz model:
-v1_1/diaghmm_z5h5 trial2 390.pth
-v1_1/diaghmm_z8h5 trial3 320.pth
+To train the networks, first train the model Human-Human Interaction data with [`mild_hri/train_hh.py`](mild_hri/train_hh.py) and then use the learned model to train on the Human-Robot Interaction data with [`mild_hri/train_hr.py`](mild_hri/train_hr.py). Some sample configurations for training can be found in [`mild_hri/train.sh`](mild_hri/train.sh) for both HHI and HRI.
 
+## Testing
 
-```python
-from mild_hri.utils import *
-model_type = 'v3_1/diaghmm_z3h5'
-trial = 1
-epoch = 300
-ckpt_path = f'logs/2023/bp_pepper_20hz_norm/{model_type}/trial{trial}/models/final_399.pth'
-_ = evaluate_ckpt_hr(ckpt_path)
-```
+For evaluating the Mean Squared Error, run the file [`test.py`](test/test.py) after editing the checkpoints in the code. The main evaluation is done by the `evaluate_ckpt_hh` and `evaluate_ckpt_hr` functions in [`mild_hri/utils.py`](mild_hri/utils.py) which are called on the test data.
 
-HH Models used for HR:
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z3h5/trial0/models/100.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z3h6/trial3/models/080.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z3h7/trial2/models/080.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z3h8/trial1/models/120.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z5h5/trial2/models/390.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z5h6/trial2/models/190.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z5h7/trial0/models/290.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z5h8/trial2/models/340.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h5/trial3/models/320.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h6/trial2/models/340.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h7/trial1/models/240.pth
-logs/2023/bp_hh_20hz/v1_1/diaghmm_z8h8/trial3/models/120.pth
-
-Best ones used for experiments:
-Nuisi Pepper: logs/2023/nuisiv2pepper_3joints_xvel/v3_2/z5h6/trial1/models/400.pth
-Nuisi HH (used by Nuisi Pepper): logs/2023/nuisiv2_3joints_xvel/z5h6/trial3/models/180.pth
-BP HH 20Hz (used by Nuisi HH): logs/2023/bp_hh_20hz_3joints_xvel/z5h6/trial0/models/final_399.pth
