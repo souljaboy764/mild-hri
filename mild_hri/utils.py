@@ -20,8 +20,8 @@ import pbdlib as pbd
 import pbdlib_torch as pbd_torch
 
 def write_summaries_vae(writer, recon, kl, steps_done, prefix):
-	writer.add_scalar(prefix+'/kl_div', sum(kl), steps_done)
-	writer.add_scalar(prefix+'/recon_loss', sum(recon), steps_done)
+	writer.add_scalar(prefix+'/kl_div', sum(kl)/len(kl), steps_done)
+	writer.add_scalar(prefix+'/recon_loss', sum(recon)/len(recon), steps_done)
 
 def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps):
 	"""Find the nearest positive-definite matrix to input taken from [1] 
@@ -406,7 +406,7 @@ def training_hh_argparse(args=None):
 						help='Factor for downsampling the data (default: 0.2)')
 	parser.add_argument('--window-size', type=int, default=5, metavar='WINDOW',
 						help='Window Size for inputs (default: 5)')
-	parser.add_argument('--num-joints', default=12, type=int,
+	parser.add_argument('--num-joints', default=3, type=int,
 		     			help='Number of joints in the input data')
 	parser.add_argument('--joint-dims', default=3, type=int,
 		     			help='Number of Dimensions of each joint in the input data')

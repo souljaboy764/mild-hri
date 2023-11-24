@@ -19,14 +19,13 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 	total_recon, total_reg, total_loss = [], [], []
 	mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior = [], [], [], []
 	z_dim = args.latent_dim
-	if ssm!=[] and model.training:
+	if ssm is not None and model.training:
 		with torch.no_grad():
-			for i in range(len(ssm)):
-				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,-z_dim:]]))
-				Sigma_chol_prior.append(batchNearestPDCholesky(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, -z_dim:, -z_dim:]])))
+			mu_prior = torch.concat([ssm.mu[None,:,:z_dim], ssm.mu[None, :,-z_dim:]])
+			Sigma_chol_prior = batchNearestPDCholesky(torch.concat([ssm.sigma[None, :, :z_dim, :z_dim], ssm.sigma[None, :, -z_dim:, -z_dim:]]))
 
-				alpha_prior.append(ssm[i].forward_variable(marginal=[], sample_size=1000))
-				alpha_argmax_prior.append(alpha_prior[-1].argmax(0))
+			alpha_prior = ssm.forward_variable(marginal=[], sample_size=1000)
+			alpha_argmax_prior = alpha_prior.argmax(0)
 	for i, x in enumerate(iterator):
 		x, label = x
 		x = x[0]
@@ -45,22 +44,19 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 			if model.training:
 				x_gen = torch.concat([xh_gen[:, None], xr_gen[:, None]], dim=1) # (mce_samples, 2, seq_len, (pos_dim+vel_dim))
 				recon_loss = F.mse_loss(x[None].repeat(args.mce_samples+1,1,1,1), x_gen, reduction='sum')
+				total_recon.append(recon_loss)
 			else:
 
-				# zh_vel = torch.diff(zh_post.mean, dim=0, prepend=zh_post.mean[0:1,:])
-				# zr_cond = ssm[label].condition(torch.concat([zh_post.mean, zh_vel],dim=-1), dim_in=slice(0, 2*z_dim), dim_out=slice(2*z_dim, 3*z_dim), return_cov=False, data_Sigma_in=None)
-				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), return_cov=False, data_Sigma_in=None)
-				
+				zr_cond = ssm.condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), return_cov=False, data_Sigma_in=None)
 				xr_cond = model._output(model._decoder(zr_cond))
-				xr_gt = x[1,:, :dims//4]
-				# recon_loss = F.mse_loss(x[1], xr_cond, reduction='sum')
-				recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='sum')
+				recon_loss = ((x[1] - xr_cond)**2).reshape((xr_cond.shape[0], model.window_size, model.num_joints, model.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
+				total_recon += recon_loss
 			
 			if model.training and epoch!=0:	
-				seq_alpha = alpha_argmax_prior[label][:seq_len]
+				seq_alpha = alpha_argmax_prior[:seq_len]
 				with torch.no_grad():
-					zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, seq_alpha], scale_tril=Sigma_chol_prior[label][0, seq_alpha])
-					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
+					zh_prior = torch.distributions.MultivariateNormal(mu_prior[0, seq_alpha], scale_tril=Sigma_chol_prior[0, seq_alpha])
+					zr_prior = torch.distributions.MultivariateNormal(mu_prior[1, seq_alpha], scale_tril=Sigma_chol_prior[1, seq_alpha])
 				reg_loss = torch.distributions.kl_divergence(zh_post, zh_prior).mean() + torch.distributions.kl_divergence(zr_post, zr_prior).mean()
 				total_reg.append(reg_loss)
 				loss = recon_loss + args.beta*reg_loss
@@ -68,7 +64,6 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 				loss = recon_loss
 				total_reg.append(0)
 
-			total_recon.append(recon_loss)
 			total_loss.append(loss)
 
 		if model.training:
@@ -137,7 +132,7 @@ if __name__=='__main__':
 		optimizer.load_state_dict(ckpt['optimizer'])
 		ssm = ckpt['ssm']
 		# global_epochs = ckpt['epoch']
-	ssm = init_ssm_torch(args.latent_dim*2, args.ssm_components, args.ssm, NUM_ACTIONS, device)
+	ssm = init_ssm_torch(args.latent_dim*2, args.ssm_components, args.ssm, 1, device)[0]
 
 	print("Starting Epochs")
 
@@ -148,9 +143,9 @@ if __name__=='__main__':
 		model.eval()
 		with torch.no_grad():
 			# Updating Prior
+			z_encoded = []
 			for a in range(len(train_iterator.dataset.actidx)):
 				s = train_iterator.dataset.actidx[a]
-				z_encoded = []
 				lens = []
 				for j in range(s[0], s[1]):
 				# for j in np.random.randint(s[0], s[1], 12):
@@ -164,15 +159,15 @@ if __name__=='__main__':
 					# zh_diff = torch.diff(zh,dim=0,prepend=zh[0:1,:])
 					zr = model(x[1], encode_only=True)
 					z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
-				ssm_np = getattr(pbd, args.ssm)(nb_dim=ssm[a].nb_dim, nb_states=ssm[a].nb_states)
-				ssm_np.init_hmm_kbins(z_encoded)
-				ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
+			ssm_np = getattr(pbd, args.ssm)(nb_dim=ssm.nb_dim, nb_states=ssm.nb_states)
+			ssm_np.init_hmm_kbins(z_encoded)
+			ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
 
-				for k in vars(ssm_np).keys():
-					if isinstance(ssm_np.__getattribute__(k), np.ndarray):
-						ssm[a].__setattr__(k, torch.Tensor(ssm_np.__getattribute__(k)).to(device).requires_grad_(False))
-					else:
-						ssm[a].__setattr__(k, ssm_np.__getattribute__(k))
+			for k in vars(ssm_np).keys():
+				if isinstance(ssm_np.__getattribute__(k), np.ndarray):
+					ssm.__setattr__(k, torch.Tensor(ssm_np.__getattribute__(k)).to(device).requires_grad_(False))
+				else:
+					ssm.__setattr__(k, ssm_np.__getattribute__(k))
 				
 		if epoch % 10 == 0 or epoch==args.epochs-1:
 			with torch.no_grad():
@@ -190,9 +185,11 @@ if __name__=='__main__':
 				if torch.allclose(param.grad, torch.zeros_like(param.grad)):
 					print('zero grad for',name)
 
-			for a in range(len(ssm)):
-				alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
-				writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
+			# for a in range(len(ssm)):
+			# 	alpha_ssm = ssm[a].forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
+			# 	writer.add_histogram(f'alpha/{a}', alpha_ssm.argmax(0), epoch)
+			alpha_ssm = ssm.forward_variable(marginal=[], sample_size=np.mean(lens).astype(int))
+			writer.add_histogram(f'alpha', alpha_ssm.argmax(0), epoch)
 		
 			
 			checkpoint_file = os.path.join(MODELS_FOLDER, '%0.3d.pth'%(epoch))
