@@ -87,3 +87,7 @@ NuiSI Pepper Dataset:
 ```bash
 python train_hr.py --results path/to/nuisi_pepper_results --ckpt-h path/to/nuisi_hh_results/XXXX.ckpt --num-joints 4 --beta 0.005 --grad-clip 0.0 --lr 5e-4 --downsample 1 --window-size 5 --mce-samples 10 --dataset nuisi_pepper --epochs 400  --variant V [--cov-cond]
 ```
+
+### Transition State Clustering
+
+During a handshaking interaction with the robot, to prevent sudden changes in stiffness arising from the misclassification of the segment, we disable back-transitions into the initial reaching segment. Additionally, since the forward variable is calculated using only the human partner's latent state during test time, we found some mismatches in the segment prediction compared to using the full joint human-robot states for timesteps near the transition boundary between the initial reaching segment and the subsequent segments. Therefore, taking a leaf out of [Transition State Clustering](https://github.com/BerkeleyAutomation/tsc), we learn an additional distribution over the states that get misclassified at the transition boundary between the reaching and contact phase. This additional transition states can be seen in `train_tsc.ipynb` where the transition state causing the initial misclassification is visualized.
