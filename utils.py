@@ -6,14 +6,10 @@ import matplotlib.pyplot as plt
 import argparse
 
 import torch
-import torch.nn.functional as F
-from torch import nn
-from torch.nn.functional import grid_sample, affine_grid
 from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-from mild_hri.transformations import _AXES2TUPLE, _TUPLE2AXES, _NEXT_AXIS, euler_matrix
-from mild_hri import dataloaders
+from phd_utils.dataloaders import *
 from mild_hri.vae import VAE
 
 import pbdlib as pbd
@@ -69,131 +65,6 @@ def batchNearestPDCholesky(A:torch.Tensor, eps = torch.finfo(torch.float32).eps)
 			print(a, torch.linalg.cholesky_ex(a).L)
 	raise ValueError(f"Unable to convert matrix to Positive Definite after {k} iterations")
 
-# joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
-# # joints = ['head', 'neck', 'torso', 'waist', 'left_shoulder', 'left_elbow', 'left_hand', 'right_shoulder', 'right_elbow', 'right_hand']
-# # joints = ['neck', 'right_shoulder', 'right_elbow', 'right_hand']
-# joints_dic = {joints[i]:i for i in range(len(joints))}
-
-
-# joints = ["none", "head", "neck", "torso", "waist", "left_collar", "left_shoulder", "left_elbow", "left_wrist", "left_hand", "left_fingertip", "right_collar", "right_shoulder", "right_elbow", "right_wrist", "right_hand", "right_fingertip", "left_hip", "left_knee", "left_ankle", "left_foot", "right_hip", "right_knee", "right_ankle", "right_foot"]
-joints = ["waist", "torso", "neck", "head", "left_shoulder", "right_shoulder", "right_elbow", "right_wrist"]
-joints_in = ['neck', 'right_shoulder', 'right_elbow', 'right_wrist']
-joints_dic = {joints[i]:i for i in range(len(joints))}
-
-
-
-def angle(a,b):
-	dot = np.dot(a,b)
-	cos = dot/(np.linalg.norm(a)*np.linalg.norm(b))
-	if np.allclose(cos, 1):
-		cos = 1
-	elif np.allclose(cos, -1):
-		cos = -1
-	return np.arccos(cos)
-
-def projectToPlane(plane, vec):
-	return (vec - plane)*np.dot(plane,vec)
-
-def rotation_normalization(skeleton):
-	leftShoulder = skeleton[joints_dic["left_shoulder"]]
-	rightShoulder = skeleton[joints_dic["right_shoulder"]]
-	waist = skeleton[joints_dic["waist"]]
-	
-	xAxisHelper = waist - rightShoulder
-	yAxis = leftShoulder - rightShoulder # right to left
-	xAxis = np.cross(xAxisHelper, yAxis) # out of the human(like an arrow in the back)
-	zAxis = np.cross(xAxis, yAxis) # like spine, but straight
-	
-	xAxis /= np.linalg.norm(xAxis)
-	yAxis /= np.linalg.norm(yAxis)
-	zAxis /= np.linalg.norm(zAxis)
-
-	return np.array([[xAxis[0], xAxis[1], xAxis[2]],
-					 [yAxis[0], yAxis[1], yAxis[2]],
-					 [zAxis[0], zAxis[1], zAxis[2]]])
-
-def joint_angle_extraction(skeleton): # Based on the Pepper Robot URDF, with the limits
-	# Recreating arm with upper and under arm
-	rightUpperArm = skeleton[1] - skeleton[0]
-	rightUnderArm = skeleton[2] - skeleton[1]
-
-
-	rightElbowAngle = np.clip(angle(rightUpperArm, rightUnderArm), 0.0087, 1.562)
-	
-	rightYaw = np.clip(np.arcsin(min(rightUpperArm[1],-0.0087)/np.linalg.norm(rightUpperArm)), -1.562, -0.0087)
-	
-	rightPitch = np.arctan2(max(rightUpperArm[0],0), rightUpperArm[2])
-	rightPitch -= np.pi/2 # Needed for pepper frame
-	
-	# Recreating under Arm Position with known Angles(without roll)
-	rightRotationAroundY = euler_matrix(0, rightPitch, 0,)[:3,:3]
-	rightRotationAroundX = euler_matrix(0, 0, rightYaw)[:3,:3]
-	rightElbowRotation = euler_matrix(0, 0, rightElbowAngle)[:3,:3]
-
-	rightUnderArmInZeroPos = np.array([np.linalg.norm(rightUnderArm), 0, 0.])
-	rightUnderArmWithoutRoll = np.dot(rightRotationAroundY,np.dot(rightRotationAroundX,np.dot(rightElbowRotation,rightUnderArmInZeroPos)))
-
-	# Calculating the angle betwenn actual under arm position and the one calculated without roll
-	rightRoll = angle(rightUnderArmWithoutRoll, rightUnderArm)
-
-	return np.array([rightPitch, rightYaw, rightRoll, rightElbowAngle]).astype(np.float32)
-
-def prepare_axis():
-	fig = plt.figure()
-	ax = fig.add_subplot(1,2,1, projection='3d')
-	# plt.ion()
-	ax.view_init(25, -155)
-	ax.set_xlim3d([-0.05, 0.75])
-	ax.set_ylim3d([-0.3, 0.5])
-	ax.set_zlim3d([-0.8, 0.2])
-	return fig, ax
-
-def reset_axis(ax, variant = None, action = None, frame_idx = None):
-	xlim = ax.get_xlim()
-	ylim = ax.get_ylim()
-	zlim = ax.get_zlim()
-	ax.cla()
-	ax.set_xlabel('X')
-	ax.set_ylabel('Y')
-	ax.set_zlabel('Z')
-	ax.set_facecolor('none')
-	ax.set_xlim3d(xlim)
-	ax.set_ylim3d(ylim)
-	ax.set_zlim3d(zlim)
-	title = ""
-	if variant is not None and action is not None and frame_idx is not None:
-		ax.set_title(variant + " " + action + "\nFrame: {}".format(frame_idx))
-	return ax
-
-def visualize_skeleton(ax, trajectory, **kwargs):
-	# trajectory shape: W, J, D (window size x num joints x joint dims)
-	# Assuming that num joints = 4 and dims = 3
-	# assert len(trajectory.shape) ==  3 #and trajectory.shape[1] == 4 and trajectory.shape[2] == 3
-	for w in range(trajectory.shape[0]):
-		ax.plot(trajectory[w, :, 0], trajectory[w, :, 1], trajectory[w, :, 2], color='k', marker='o', **kwargs)
-	
-	return ax
-
-def downsample_trajs(train_data, downsample, device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
-	# train_data shape: seq_len, J, D : J - num joints, D - dimensions
-	num_trajs = len(train_data)
-	for i in range(num_trajs):
-		seq_len, J, D = train_data[i].shape
-		if downsample<1 and downsample>0:
-			downsample_len = downsample*seq_len
-		else:
-			downsample_len = downsample
-		theta = torch.Tensor(np.array([[[1,0,0.], [0,1,0]]])).to(device).repeat(J,1,1)
-		train_data[i] = train_data[i].transpose(1,2,0) # J, D, seq_len
-		train_data[i] = torch.Tensor(train_data[i]).to(device).unsqueeze(2) # J, D, 1, seq_len
-		train_data[i] = torch.concat([train_data[i], torch.zeros_like(train_data[i])], dim=2) # J, D, 2 seq_len
-		
-		grid = affine_grid(theta, torch.Size([J, D, 2, downsample_len]), align_corners=True)
-		train_data[i] = grid_sample(train_data[i].type(torch.float32), grid, align_corners=True) # J, D, 2 downsample_len
-		train_data[i] = train_data[i][:, :, 0].cpu().detach().numpy() # J, D, downsample_len
-		train_data[i] = train_data[i].transpose(2,0,1) # downsample_len, J, D
-	return train_data
-
 def init_ssm_np(nb_dim, nb_states, ssm_type, NUM_ACTIONS):
 	ssm = []
 	for i in range(NUM_ACTIONS):
@@ -230,60 +101,15 @@ def init_ssm_torch(nb_dim, nb_states, ssm_type, NUM_ACTIONS, device):
 		ssm.append(ssm_i)
 	return ssm
 
-# Thanks to https://stackoverflow.com/questions/45729092/make-interactive-matplotlib-window-not-pop-to-front-on-each-update-windows-7/45734500#45734500
-def mypause(interval):
-    backend = plt.rcParams['backend']
-    if backend in matplotlib.rcsetup.interactive_bk:
-        figManager = matplotlib._pylab_helpers.Gcf.get_active()
-        if figManager is not None:
-            canvas = figManager.canvas
-            if canvas.figure.stale:
-                canvas.draw()
-            canvas.start_event_loop(interval)
-            return
-	
-def window_concat(traj_data, window_length, robot=None, input_dim=None):
-	window_trajs = []
-	for i in range(len(traj_data)):
-		trajs_concat = []
-		traj_shape = traj_data[i].shape
-		dim = traj_shape[-1]
-		if robot is None and input_dim is None:
-			input_dim = dim//2
-			# input_dim = int(2*dim/3)
-		elif input_dim is None:
-			if robot=='pepper':
-				input_dim = dim-4
-			elif robot=='yumi':
-				input_dim = dim-7
-		idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-		trajs_concat.append(traj_data[i][:,:input_dim][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*input_dim)))
-		idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-		trajs_concat.append(traj_data[i][:,input_dim:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-input_dim))))
-		# elif robot=='pepper':
-		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-		# 	trajs_concat.append(traj_data[i][:,:dim-4][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-4))))
-		# 	idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-		# 	trajs_concat.append(traj_data[i][:,-4:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*4)))
-		# elif robot=='yumi':
-		# 	idx = np.array([np.arange(i,i+window_length) for i in range(traj_shape[0] + 1 - 2*window_length)])
-		# 	trajs_concat.append(traj_data[i][:,:dim-7][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*(dim-7))))
-		# 	idx = np.array([np.arange(i,i+window_length) for i in range(window_length, traj_shape[0] + 1 - window_length)])
-		# 	trajs_concat.append(traj_data[i][:,-7:][idx].reshape((traj_shape[0] + 1 - 2*window_length, window_length*7)))
-
-		trajs_concat = np.concatenate(trajs_concat,axis=-1)
-		window_trajs.append(trajs_concat)
-	return window_trajs
-
 def evaluate_ckpt_hh(ckpt_path):
 	ckpt = torch.load(ckpt_path)
 	args_ckpt = ckpt['args']
 	if args_ckpt.dataset == 'buetepage':
-		dataset = dataloaders.buetepage.HHWindowDataset
+		dataset = buetepage.HHWindowDataset
 	if args_ckpt.dataset == 'nuisi':
-		dataset = dataloaders.nuisi.HHWindowDataset
+		dataset = nuisi.HHWindowDataset
 	if args_ckpt.dataset == 'alap':
-		dataset = dataloaders.alap.HHWindowDataset
+		dataset = alap.HHWindowDataset
 	
 	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
@@ -299,11 +125,11 @@ def evaluate_ckpt_hr(ckpt_path):
 	args_h = ckpt['args_h']
 	args_r = ckpt['args_r']
 	if args_r.dataset == 'buetepage_pepper':
-		dataset = dataloaders.buetepage.PepperWindowDataset
+		dataset = buetepage.PepperWindowDataset
 	if args_r.dataset == 'nuisi_pepper':
-		dataset = dataloaders.nuisi.PepperWindowDataset
+		dataset = nuisi.PepperWindowDataset
 	if args_r.dataset == 'buetepage_yumi':
-		dataset = dataloaders.buetepage_hr.YumiWindowDataset
+		dataset = buetepage_hr.YumiWindowDataset
 	# TODO: BP_Yumi, Nuisi_Pepper
 	
 	test_iterator = DataLoader(dataset('../'+args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
