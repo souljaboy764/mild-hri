@@ -109,7 +109,7 @@ def evaluate_ckpt_hh(ckpt_path):
 	if args_ckpt.dataset == 'alap':
 		dataset = alap.HHWindowDataset
 	
-	test_iterator = DataLoader(dataset(args_ckpt.src, train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
+	test_iterator = DataLoader(dataset(train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
 	model = VAE(**(args_ckpt.__dict__)).to(device)
 	model.load_state_dict(ckpt['model'])
@@ -130,7 +130,7 @@ def evaluate_ckpt_hr(ckpt_path):
 		dataset = buetepage_hr.YumiWindowDataset
 	# TODO: BP_Yumi, Nuisi_Pepper
 	
-	test_iterator = DataLoader(dataset('../'+args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
+	test_iterator = DataLoader(dataset(train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
 	model_h = VAE(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
