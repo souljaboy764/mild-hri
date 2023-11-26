@@ -91,3 +91,13 @@ python train_hr.py --results path/to/nuisi_pepper_results --ckpt-h path/to/nuisi
 ### Transition State Clustering
 
 During a handshaking interaction with the robot, to prevent sudden changes in stiffness arising from the misclassification of the segment, we disable back-transitions into the initial reaching segment. Additionally, since the forward variable is calculated using only the human partner's latent state during test time, we found some mismatches in the segment prediction compared to using the full joint human-robot states for timesteps near the transition boundary between the initial reaching segment and the subsequent segments. Therefore, taking a leaf out of [Transition State Clustering](https://github.com/BerkeleyAutomation/tsc), we learn an additional distribution over the states that get misclassified at the transition boundary between the reaching and contact phase. This additional transition states can be seen in `train_tsc.ipynb` where the transition state causing the initial misclassification is visualized.
+
+## Testing
+
+The output of the below testing code is the Mean squared prediction error and standard deviation for each interaction in the dataset of the model that is being evaluated. To run the testing, simply run:
+
+```bash
+python test.py --ckpt /path/to_ckpt
+```
+
+To visualize the latent space learned by the mdoel, run the python notebook [`mse_plotter.ipynb`](mse_plotter.ipynb) which plots the first 3 latent coordinates as well as the Gaussians corresponding to the HMM state.
