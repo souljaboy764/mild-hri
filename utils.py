@@ -1,7 +1,5 @@
 import torch
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 
 import argparse
 
@@ -10,7 +8,7 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from phd_utils.dataloaders import *
-from mild_hri.vae import VAE
+from vae import VAE
 
 import pbdlib as pbd
 import pbdlib_torch as pbd_torch

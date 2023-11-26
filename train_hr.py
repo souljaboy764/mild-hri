@@ -1,17 +1,15 @@
 import torch
 import torch.nn.functional as F
-from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import os, datetime, argparse
 
-import mild_hri.vae
-from mild_hri.utils import *
-from mild_hri.dataloaders import *
+from vae import VAE
+from utils import *
+from phd_utils.dataloaders import *
 
-import pbdlib as pbd
 import pbdlib_torch as pbd_torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,8 +73,6 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch, prior
 					recon_loss = recon_loss + F.mse_loss(x_r.repeat(args.mce_samples+1,1,1), xr_cond, reduction='sum')
 				
 			else:
-				# x_gen = torch.concat([xh_gen[None], xr_gen[None]]) # (2, seq_len, dims)
-				# recon_loss = F.mse_loss(x, x_gen, reduction='sum')
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim),
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				
@@ -122,22 +118,16 @@ if __name__=='__main__':
 		dataset = buetepage_hr.YumiWindowDataset
 	elif args_r.dataset == 'nuisi_pepper':
 		dataset = nuisi.PepperWindowDataset
-	# TODO: Nuitrack
 	
 	print("Reading Data")
-	train_iterator = DataLoader(dataset(args_r.src, train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
-	test_iterator = DataLoader(dataset(args_r.src, train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
-
-	# args_r.joints_max = torch.Tensor(train_iterator.dataset.joints_max).to(device)
-	# args_r.joints_min = torch.Tensor(train_iterator.dataset.joints_min).to(device)
-	# args_r.joints_range = args_r.joints_max - args_r.joints_min 
+	train_iterator = DataLoader(dataset(train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
+	test_iterator = DataLoader(dataset(train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
 	print("Creating Model and Optimizer")
 	ssm = ckpt_h['ssm']
-	model_h = getattr(mild_hri.vae, args_h.model)(**(args_h.__dict__)).to(device)
+	model_h = VAE(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt_h['model'])
-	model_r = getattr(mild_hri.vae, args_h.model)(**{**(args_h.__dict__), **(args_r.__dict__)})
-	# model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
+	model_r = VAE(**{**(args_h.__dict__), **(args_r.__dict__)})
 	model_r = model_r.to(device)
 	params = model_r.parameters()
 	named_params = model_r.named_parameters()

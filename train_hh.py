@@ -4,11 +4,11 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
-import os, datetime, argparse
+import os
 
-import mild_hri.vae
-from mild_hri.utils import *
-from mild_hri.dataloaders import *
+from vae import VAE
+from utils import *
+from phd_utils.dataloaders import *
 
 import pbdlib as pbd
 
@@ -32,7 +32,7 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 		x = x[0]
 		label = label[0]
 		x = torch.Tensor(x).to(device)
-		seq_len, dims = x.shape # dims = 2*(pos_dim+vel_dim) if  cartesian velocity is used
+		seq_len, dims = x.shape # dims = 2*(pos_dim+vel_dim) if cartesian velocity is used
 		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # (2, seq_len, (pos_dim+vel_dim)) x[0] = Agent 1, x[1] = Agent 2
 
 		if model.training:
@@ -91,11 +91,10 @@ if __name__=='__main__':
 		dataset = nuisi.HHWindowDataset
 	elif args.dataset == 'alap':
 		dataset = alap.HHWindowDataset
-	# TODO: Nuitrack
-	
+
 	print("Reading Data")
-	train_iterator = DataLoader(dataset(args.src, train=True, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=True)
-	test_iterator = DataLoader(dataset(args.src, train=False, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=False)
+	train_iterator = DataLoader(dataset(train=True, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=True)
+	test_iterator = DataLoader(dataset(train=False, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=False)
 	print("Creating Model and Optimizer")
 
 	DEFAULT_RESULTS_FOLDER = args.results
@@ -106,7 +105,7 @@ if __name__=='__main__':
 
 	print("Creating Model and Optimizer")
 	args.num_joints *= 2
-	model = getattr(mild_hri.vae, args.model)(**(args.__dict__)).to(device)
+	model = VAE(**(args.__dict__)).to(device)
 	params = model.parameters()
 	named_params = model.named_parameters()
 	optimizer = torch.optim.AdamW(params, lr=args.lr, fused=True)
