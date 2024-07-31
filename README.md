@@ -17,7 +17,8 @@ Clone the pbdlib repositories:
 Pbdlib Python:
 
 ```bash
-git clone https://gitlab.idiap.ch/rli/pbdlib-python
+git clone https://git.ias.informatik.tu-darmstadt.de/prasad/pbdlib-torch
+mv pbdlib-torch pbdlib-python
 git clone https://gist.github.com/5d551c432d4a4ebf1433615595cfd87d.git
 cd pbdlib-python
 git checkout d211d86fa81b50cadec63c5135c312ece861e508
