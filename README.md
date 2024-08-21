@@ -17,12 +17,11 @@ Clone the pbdlib repositories:
 Pbdlib Python:
 
 ```bash
-git clone https://git.ias.informatik.tu-darmstadt.de/prasad/pbdlib-torch
-mv pbdlib-torch pbdlib-python
-git clone https://gist.github.com/5d551c432d4a4ebf1433615595cfd87d.git
+git clone https://git.ias.informatik.tu-darmstadt.de/prasad/pbdlib-torch pbdlib-python
 cd pbdlib-python
-git checkout d211d86fa81b50cadec63c5135c312ece861e508
+git fetch origin d211d86fa81b50cadec63c5135c312ece861e508
 cd ..
+git clone https://gist.github.com/5d551c432d4a4ebf1433615595cfd87d.git
 patch --strip=1 --directory=pbdlib-python/ < 5d551c432d4a4ebf1433615595cfd87d/pbdlib_python3.patch
 cd pbdlib-python
 export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
