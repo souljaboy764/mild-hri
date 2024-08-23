@@ -17,20 +17,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 	iters = 0
 	total_recon, total_reg, total_loss = [], [], []
-	mu_prior, Sigma_chol_prior, alpha_prior, alpha_argmax_prior = [], [], [], []
+	mu_prior, Sigma_chol_prior = [], []
 	z_dim = args.latent_dim
 	if ssm!=[] and model.training:
 		with torch.no_grad():
 			for i in range(len(ssm)):
 				mu_prior.append(torch.concat([ssm[i].mu[None,:,:z_dim], ssm[i].mu[None, :,-z_dim:]]))
 				Sigma_chol_prior.append(batchNearestPDCholesky(torch.concat([ssm[i].sigma[None, :, :z_dim, :z_dim], ssm[i].sigma[None, :, -z_dim:, -z_dim:]])))
-
-				alpha_prior.append(ssm[i].forward_variable(marginal=[], sample_size=1000))
-				alpha_argmax_prior.append(alpha_prior[-1].argmax(0))
 	for i, x in enumerate(iterator):
-		x, label = x
+		x, label, traj_label = x
 		x = x[0]
 		label = label[0]
+		traj_label = traj_label[0]
 		x = torch.Tensor(x).to(device)
 		seq_len, dims = x.shape # dims = 2*(pos_dim+vel_dim) if cartesian velocity is used
 		x = torch.concat([x[None, :, :dims//2], x[None, :, dims//2:]]) # (2, seq_len, (pos_dim+vel_dim)) x[0] = Agent 1, x[1] = Agent 2
@@ -57,10 +55,9 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 				recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='sum')
 			
 			if model.training and epoch!=0:	
-				seq_alpha = alpha_argmax_prior[label][:seq_len]
 				with torch.no_grad():
-					zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, seq_alpha], scale_tril=Sigma_chol_prior[label][0, seq_alpha])
-					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
+					zh_prior = torch.distributions.MultivariateNormal(mu_prior[label][0, traj_label], scale_tril=Sigma_chol_prior[label][0, traj_label])
+					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, traj_label], scale_tril=Sigma_chol_prior[label][1, traj_label])
 				reg_loss = torch.distributions.kl_divergence(zh_post, zh_prior).mean() + torch.distributions.kl_divergence(zr_post, zr_prior).mean()
 				total_reg.append(reg_loss)
 				loss = recon_loss + args.beta*reg_loss
@@ -152,10 +149,12 @@ if __name__=='__main__':
 			for a in range(len(train_iterator.dataset.actidx)):
 				s = train_iterator.dataset.actidx[a]
 				z_encoded = []
+				traj_labels = []
 				lens = []
 				for j in range(s[0], s[1]):
 				# for j in np.random.randint(s[0], s[1], 12):
-					x, label = train_iterator.dataset[j]
+					x, label, traj_label = train_iterator.dataset[j]
+					traj_labels += traj_label.tolist()
 					x = torch.Tensor(x).to(device)
 					seq_len, dims = x.shape
 					lens.append(seq_len)
@@ -164,10 +163,30 @@ if __name__=='__main__':
 					zh = model(x[0], encode_only=True)
 					# zh_diff = torch.diff(zh,dim=0,prepend=zh[0:1,:])
 					zr = model(x[1], encode_only=True)
-					z_encoded.append(torch.concat([zh, zr], dim=-1).cpu().numpy()) # (num_trajs, seq_len, 2*z_dim)
+					z = torch.concat([zh, zr], dim=-1)
+					z_encoded += z.cpu().numpy().tolist() # (num_trajs, seq_len, 2*z_dim)
+				
+				z_encoded = np.array(z_encoded)
+				traj_labels = np.array(traj_labels)
 				ssm_np = getattr(pbd, args.ssm)(nb_dim=ssm[a].nb_dim, nb_states=ssm[a].nb_states)
-				ssm_np.init_hmm_kbins(z_encoded)
-				ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
+				# ssm_np.init_hmm_kbins(z_encoded)
+				# ssm_np.em(z_encoded, reg=args.cov_reg, reg_finish=args.cov_reg)
+				ssm_np.init_priors = np.zeros(ssm_np.nb_states)
+				ssm_np.init_priors[0] = 1
+				ssm_np.priors = np.zeros(ssm_np.nb_states)
+				ssm_np.priors[0] = 1
+				ssm_np.mu = np.zeros((ssm_np.nb_states, ssm_np.nb_dim))
+				ssm_np.sigma = np.zeros((ssm_np.nb_states, ssm_np.nb_dim, ssm_np.nb_dim))
+				ssm_np.Trans = np.zeros((ssm_np.nb_states, ssm_np.nb_states))
+				for i in range(ssm_np.nb_states):
+					mask = traj_labels==i
+					ssm_np.mu[i] = np.mean(z_encoded[mask])
+					ssm_np.sigma[i] = np.cov(z_encoded[mask], rowvar=False)
+					ssm_np.Trans[i,i] = mask.sum()
+					if i>0:
+						ssm_np.Trans[i-1,i] = s[1] - s[0]
+				ssm_np.Trans /= np.sum(ssm_np.Trans, axis=1, keepdims=True)
+					
 
 				for k in vars(ssm_np).keys():
 					if isinstance(ssm_np.__getattribute__(k), np.ndarray):

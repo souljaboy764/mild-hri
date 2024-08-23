@@ -77,7 +77,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch, prior
 												return_cov=False, data_Sigma_in=data_Sigma_in)
 				
 				xr_cond = model_r._output(model_r._decoder(zr_cond))# * args_r.joints_range + args_r.joints_min
-				recon_loss = F.mse_loss(x_r, xr_cond, reduction='sum')
+				recon_loss = F.mse_loss(x_r[:, :model_r.input_dim//2], xr_cond[:, :model_r.input_dim//2], reduction='sum')
 			
 			if model_r.training and epoch!=0:	
 				seq_alpha = alpha_argmax_prior[label][:seq_len]
@@ -118,6 +118,8 @@ if __name__=='__main__':
 		dataset = buetepage_hr.YumiWindowDataset
 	elif args_r.dataset == 'nuisi_pepper':
 		dataset = nuisi.PepperWindowDataset
+	elif args_r.dataset == 'kobo':
+		dataset = alap.KoboWindowDataset
 	
 	print("Reading Data")
 	train_iterator = DataLoader(dataset(train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
@@ -158,7 +160,10 @@ if __name__=='__main__':
 
 	if args_r.ckpt is not None:
 		ckpt = torch.load(args_r.ckpt)
-		model_r.load_state_dict(ckpt['model_r'])
+		if 'model_r' in ckpt:
+			model_r.load_state_dict(ckpt['model_r'])
+		else:
+			model_r.load_state_dict(ckpt['model']) # trying to init with human model
 		optimizer.load_state_dict(ckpt['optimizer'])
 		global_epochs = ckpt['epoch']
 

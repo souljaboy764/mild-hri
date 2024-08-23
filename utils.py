@@ -108,6 +108,8 @@ def evaluate_ckpt_hh(ckpt_path):
 		dataset = nuisi.HHWindowDataset
 	if args_ckpt.dataset == 'alap':
 		dataset = alap.HHWindowDataset
+	if args_ckpt.dataset == 'kobo':
+		dataset = alap.KoboWindowDataset
 	
 	test_iterator = DataLoader(dataset(train=False, window_length=args_ckpt.window_size, downsample=args_ckpt.downsample), batch_size=1, shuffle=False)
 
@@ -116,7 +118,7 @@ def evaluate_ckpt_hh(ckpt_path):
 	model.eval()
 	ssm = ckpt['ssm']
 
-	return evaluate_ckpt(model, model, ssm, args_ckpt.cov_cond, test_iterator, None)
+	return evaluate_ckpt(model, model, ssm, args_ckpt.cov_cond, test_iterator)
 
 def evaluate_ckpt_hr(ckpt_path):
 	ckpt = torch.load(ckpt_path)
@@ -128,14 +130,14 @@ def evaluate_ckpt_hr(ckpt_path):
 		dataset = nuisi.PepperWindowDataset
 	if args_r.dataset == 'buetepage_yumi':
 		dataset = buetepage_hr.YumiWindowDataset
-	# TODO: BP_Yumi, Nuisi_Pepper
+	if args_r.dataset == 'kobo':
+		dataset = alap.KoboWindowDataset
 	
 	test_iterator = DataLoader(dataset(train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
 
 	model_h = VAE(**(args_h.__dict__)).to(device)
 	model_h.load_state_dict(ckpt['model_h'])
 	model_r = VAE(**{**(args_h.__dict__), **(args_r.__dict__)})
-	# model_r._output = nn.Sequential(model_r._output, nn.Sigmoid())
 	model_r.to(device)
 
 	model_r.load_state_dict(ckpt['model_r'])
@@ -144,22 +146,12 @@ def evaluate_ckpt_hr(ckpt_path):
 	model_r.eval()
 	ssm = ckpt['ssm']
 
-	return evaluate_ckpt(model_h, model_r, ssm, args_r.cov_cond, test_iterator, args_r)
+	return evaluate_ckpt(model_h, model_r, ssm, args_r.cov_cond, test_iterator)
 
-def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
-	pred_mse_total = []
+def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator):
 	pred_mse_action = []
-	pred_mse_nowave = []
-	# pred_mse_wave = []
-	# pred_mse_shake = []
-	# pred_mse_rocket = []
-	# pred_mse_parachute = []
-
-	x_in = []
-	x_vae = []
 	x_cond = []
 	with torch.no_grad():
-		# for i, x in enumerate(test_iterator):
 		for idx in test_iterator.dataset.actidx:
 			pred_mse_action.append([])
 			for i in range(idx[0],idx[1]):
@@ -183,34 +175,13 @@ def evaluate_ckpt(model_h, model_r, ssm, use_cov, test_iterator, args_r):
 				zr_cond = ssm[label].condition(zh_post.mean, dim_in=slice(0, z_dim), dim_out=slice(z_dim, 2*z_dim), 
 												data_Sigma_in=data_Sigma_in,
 												return_cov=False) 
-				xr_cond = model_r._output(model_r._decoder(zr_cond)) # * args_r.joints_range + args_r.joints_min
+				xr_cond = model_r._output(model_r._decoder(zr_cond))
 				x_cond.append(xr_cond.cpu().numpy())
 				
 				mse_i = ((xr_cond - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-				pred_mse_total += mse_i
 				pred_mse_action[-1] += mse_i
-
-				# # Buetepage HH & Pepper
-				# if i>7:
-				# 	pred_mse_nowave += mse_i
-
-				# # Buetepage Yumi
-				# if i>2:
-				# 	pred_mse_nowave += mse_i
-				
-				# # NuiSI v2
-				# if i>3:
-				# 	pred_mse_nowave += mse_i
-				
-				
-				# vae_mse += ((xr_gen - x_r)**2).reshape((x_r.shape[0], model_r.window_size, model_r.num_joints, model_r.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
-	# x_in = np.array(x_in,dtype=object)
-	# x_cond = np.array(x_cond,dtype=object)
-	# x_vae = np.array(x_vae,dtype=object)
-
-	# np.savez_compressed('x_test_cond_norm.npz', x_in=x_in, x_cond=x_cond, x_vae=x_vae)
 	
-	return pred_mse_total, pred_mse_action, pred_mse_nowave#, pred_mse_wave, pred_mse_shake, pred_mse_rocket, pred_mse_parachute
+	return pred_mse_action
 
 
 def training_hh_argparse(args=None):
@@ -220,7 +191,7 @@ def training_hh_argparse(args=None):
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', "nuisi", 'alap'],
+	parser.add_argument('--dataset', type=str, default='buetepage', metavar='DATASET', choices=['buetepage', "nuisi", 'alap', 'kobo'],
 						help='Dataset to use: buetepage or nuisi (default: buetepage).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
@@ -280,8 +251,8 @@ def training_hr_argparse(args=None):
 						help='Path for saving results (default: ./logs/results/MMDDHHmm).', metavar='RES')
 	parser.add_argument('--src', type=str, default='./data/buetepage/traj_data.npz', metavar='SRC',
 						help='Path to read training and testing data (default: ./data/buetepage/traj_data.npz).')
-	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage_yumi', 'buetepage_pepper', "nuisi_pepper"],
-						help='Dataset to use: buetepage_yumi, buetepage_pepper or nuisi_pepper (default: buetepage_pepper).')
+	parser.add_argument('--dataset', type=str, default='buetepage_pepper', metavar='DATASET', choices=['buetepage_yumi', 'buetepage_pepper', "nuisi_pepper", 'kobo'],
+						help='Dataset to use: buetepage_yumi, buetepage_pepper, nuisi_pepper or kobo (default: buetepage_pepper).')
 	parser.add_argument('--seed', type=int, default=np.random.randint(0,np.iinfo(np.int32).max), metavar='SEED',
 						help='Random seed for training (randomized by default).')
 	
