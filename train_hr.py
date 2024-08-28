@@ -78,6 +78,7 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch, prior
 				
 				xr_cond = model_r._output(model_r._decoder(zr_cond))# * args_r.joints_range + args_r.joints_min
 				recon_loss = F.mse_loss(x_r[:, :model_r.input_dim//2], xr_cond[:, :model_r.input_dim//2], reduction='sum')
+				# recon_loss = F.mse_loss(x_r[:, :model_r.input_dim], xr_cond[:, :model_r.input_dim], reduction='none').reshape((xr_cond.shape[0], model_r.window_size, model_h.num_joints//2, model_h.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 			
 			if model_r.training and epoch!=0:	
 				seq_alpha = alpha_argmax_prior[label][:seq_len]
@@ -89,6 +90,11 @@ def run_iteration(iterator, ssm, model_h, model_r, optimizer, args, epoch, prior
 			else:
 				loss = recon_loss
 				total_reg.append(0)
+			
+				# if model_r.training:
+				# 	total_recon.append(recon_loss)
+				# else:
+				# 	total_recon += recon_loss
 
 			total_recon.append(recon_loss)
 			total_loss.append(loss)
@@ -122,8 +128,8 @@ if __name__=='__main__':
 		dataset = alap.KoboWindowDataset
 	
 	print("Reading Data")
-	train_iterator = DataLoader(dataset(train=True, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=True)
-	test_iterator = DataLoader(dataset(train=False, window_length=args_r.window_size, downsample=args_r.downsample), batch_size=1, shuffle=False)
+	train_iterator = DataLoader(dataset(train=True, window_length=args_r.window_size, downsample=args_r.downsample, use_vel=False), batch_size=1, shuffle=True)
+	test_iterator = DataLoader(dataset(train=False, window_length=args_r.window_size, downsample=args_r.downsample, use_vel=False), batch_size=1, shuffle=False)
 
 	print("Creating Model and Optimizer")
 	ssm = ckpt_h['ssm']
@@ -133,7 +139,7 @@ if __name__=='__main__':
 	model_r = model_r.to(device)
 	params = model_r.parameters()
 	named_params = model_r.named_parameters()
-	optimizer = torch.optim.AdamW(params, lr=args_r.lr, fused=True)
+	optimizer = torch.optim.AdamW(params, lr=args_r.lr, fused=False, foreach=False)
 
 	MODELS_FOLDER = os.path.join(args_r.results, "models")
 	SUMMARIES_FOLDER = os.path.join(args_r.results, "summary")
@@ -162,10 +168,8 @@ if __name__=='__main__':
 		ckpt = torch.load(args_r.ckpt)
 		if 'model_r' in ckpt:
 			model_r.load_state_dict(ckpt['model_r'])
-		else:
-			model_r.load_state_dict(ckpt['model']) # trying to init with human model
 		optimizer.load_state_dict(ckpt['optimizer'])
-		global_epochs = ckpt['epoch']
+		# global_epochs = ckpt['epoch']
 
 	torch.compile(model_h)
 	torch.compile(model_r)

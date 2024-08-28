@@ -54,7 +54,8 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 				xr_cond = model._output(model._decoder(zr_cond))
 				xr_gt = x[1,:, :dims//4]
 				# recon_loss = F.mse_loss(x[1], xr_cond, reduction='sum')
-				recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='sum')
+				# recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='sum')
+				recon_loss = F.mse_loss(x[1,:, :dims//4], xr_cond[:, :dims//4], reduction='none').reshape((xr_cond.shape[0], model.window_size, model.num_joints//2, model.joint_dims)).sum(-1).mean(-1).mean(-1).detach().cpu().numpy().tolist()
 			
 			if model.training and epoch!=0:	
 				seq_alpha = alpha_argmax_prior[label][:seq_len]
@@ -63,12 +64,17 @@ def run_iteration(iterator, ssm, model, optimizer, args, epoch):
 					zr_prior = torch.distributions.MultivariateNormal(mu_prior[label][1, seq_alpha], scale_tril=Sigma_chol_prior[label][1, seq_alpha])
 				reg_loss = torch.distributions.kl_divergence(zh_post, zh_prior).mean() + torch.distributions.kl_divergence(zr_post, zr_prior).mean()
 				total_reg.append(reg_loss)
+				total_recon.append(recon_loss)
 				loss = recon_loss + args.beta*reg_loss
 			else:
 				loss = recon_loss
 				total_reg.append(0)
+			
+				if model.training:
+					total_recon.append(recon_loss)
+				else:
+					total_recon += recon_loss
 
-			total_recon.append(recon_loss)
 			total_loss.append(loss)
 
 		if model.training:
@@ -95,8 +101,8 @@ if __name__=='__main__':
 		dataset = alap.KoboWindowDataset
 
 	print("Reading Data")
-	train_iterator = DataLoader(dataset(train=True, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=True)
-	test_iterator = DataLoader(dataset(train=False, window_length=args.window_size, downsample=args.downsample), batch_size=1, shuffle=False)
+	train_iterator = DataLoader(dataset(train=True, window_length=args.window_size, downsample=args.downsample, use_vel=True), batch_size=1, shuffle=True)
+	test_iterator = DataLoader(dataset(train=False, window_length=args.window_size, downsample=args.downsample, use_vel=True), batch_size=1, shuffle=False)
 	print("Creating Model and Optimizer")
 
 	DEFAULT_RESULTS_FOLDER = args.results
